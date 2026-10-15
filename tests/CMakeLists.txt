@@ -62,3 +62,13 @@ runtime_error_case(callback-abi "$<TARGET_FILE:osw-test-api>" bad-callback callb
 if(WIN32)
   runtime_error_case(invalid-path "$<TARGET_FILE:osw-test-api>" none invalid-path 20)
 endif()
+
+if(OSW_BUILD_SHARED)
+  # A C host that loads the plugin at runtime; it must not link the library.
+  add_executable(osw-shared-load-test shared_load.c)
+  target_include_directories(osw-shared-load-test PRIVATE ../include)
+  target_link_libraries(osw-shared-load-test PRIVATE ${CMAKE_DL_LIBS})
+  add_dependencies(osw-shared-load-test orbisteamworks_shared)
+  add_test(NAME shared-load COMMAND osw-shared-load-test
+    $<TARGET_FILE:orbisteamworks_shared> "${CMAKE_CURRENT_BINARY_DIR}/absent-library")
+endif()

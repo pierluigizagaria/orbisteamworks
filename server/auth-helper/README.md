@@ -1,5 +1,8 @@
 # Anonymous Steam authentication helper
 
+The complete token format, protocol and verifier rules for other servers are
+in [docs/OSW1_TOKEN_AND_HELPER.md](../../docs/OSW1_TOKEN_AND_HELPER.md).
+
 Built as `osw-auth-helper` by the normal CMake build. It runs on the publisher
 machine, loads the operator-supplied Steam API library and logs on anonymously
 for AppID 480. It opens no HTTP listener and does not advertise a game server.

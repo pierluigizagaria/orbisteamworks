@@ -90,3 +90,6 @@ The build uses nlohmann/json, supplied by the host CMake target or installed hea
 Standalone builds may set `OSW_JSON_INCLUDE_DIR`. No Steamworks SDK headers or
 libraries are required at compile time. `OSW_BUILD_TOOLS` and `OSW_BUILD_TESTS`
 default off when the library is included with `add_subdirectory`.
+`OSW_BUILD_SHARED` (default off) also builds `orbisteamworks.dll` or
+`liborbisteamworks.so`, which exports only the functions above for hosts that
+load the library at runtime; see PLUGIN_DESIGN.md.

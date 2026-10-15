@@ -16,7 +16,9 @@ server. See the [gate report](docs/GATE1_AUTH_SPIKE.md) and
 [build/test instructions](tools/auth-spike/README.md). The C API, initial host
 glue and verified publisher provider are implemented locally and undergoing
 integration testing. The current scope is the shadPS4 proof of concept;
-distribution and a possible external DLL adapter are deferred. There is no
+distribution decisions are deferred. A runtime-loadable build
+(`OSW_BUILD_SHARED`, off by default) exists only as a
+[design prototype](docs/PLUGIN_DESIGN.md). There is no
 release or paired-gameplay acceptance. The actual game has passed Steam-backed
 login, platform-party creation, publisher search and manual cancel/reentry on
 one account. See the [local PoC instructions](docs/LOCAL_POC.md)
@@ -100,8 +102,11 @@ accounts. See the
 
 ## Read next
 
+- [Quickstart for players and operators](QUICKSTART.md)
 - [Feasibility, decision and gates](docs/FEASIBILITY.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [C API](docs/C_API.md) and [runtime-loadable library design](docs/PLUGIN_DESIGN.md)
+- [osw1 token and auth-helper protocol](docs/OSW1_TOKEN_AND_HELPER.md)
 - [CTR invitation-to-public-matchmaking validation case](docs/CTR_VALIDATION_CASE.md)
 - [Evidence and pinned references](docs/SOURCES.md)
 - [Contributor instructions](AGENTS.md)

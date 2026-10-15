@@ -84,8 +84,9 @@ static int run(const Api *api, const char *steam_library) {
     osw_result result;
     uint64_t id = 0;
     const char metadata[] = "{\"client_id\":\"fixture\",\"scope\":\"openid\",\"server_id\":\"2\"}";
+    const char *error = NULL;
     int waited, seen = 0;
-    int32_t status;
+    int32_t status = OSW_PENDING;
 
     memset(&config, 0, sizeof(config));
     config.size = sizeof(config);
@@ -102,8 +103,10 @@ static int run(const Api *api, const char *steam_library) {
     config.abi_version = OSW_ABI_VERSION;
     if (api->create(&config, &context) != OSW_OK || !context)
         return fail("create");
-    if (api->start(context) != OSW_OK)
-        return fail("start");
+    if (api->start(context) != OSW_OK) {
+        error = "start";
+        goto done;
+    }
 
     memset(&event, 0, sizeof(event));
     event.size = sizeof(event);
@@ -113,15 +116,21 @@ static int run(const Api *api, const char *steam_library) {
         if (!seen)
             pause_ms(10);
     }
-    if (!seen)
-        return fail("no identity event within 5 seconds");
+    if (!seen) {
+        error = "no identity event within 5 seconds";
+        goto done;
+    }
     memset(&identity, 0, sizeof(identity));
     identity.size = sizeof(identity);
-    if (api->get_identity(context, &identity) != OSW_OK)
-        return fail("get_identity");
+    if (api->get_identity(context, &identity) != OSW_OK) {
+        error = "get_identity";
+        goto done;
+    }
     if (identity.signed_in || identity.account_id || identity.reason_code != 10 ||
-        !identity.reason[0])
-        return fail("expected signed out with reason_code 10 and a reason");
+        !identity.reason[0]) {
+        error = "expected signed out with reason_code 10 and a reason";
+        goto done;
+    }
     printf("signed out: reason_code=%d reason=\"%s\"\n", identity.reason_code, identity.reason);
 
     /* A signed-out library must refuse or fail a token request, never succeed. */
@@ -135,22 +144,26 @@ static int run(const Api *api, const char *steam_library) {
     if (status == OSW_OK) {
         memset(&result, 0, sizeof(result));
         result.size = sizeof(result);
-        for (waited = 0; waited < 5000; waited += 10) {
-            if (api->get_result(context, id, &result) == OSW_OK)
-                break;
-            pause_ms(10);
+        status = OSW_PENDING;
+        for (waited = 0; waited < 5000 && status == OSW_PENDING; waited += 10) {
+            status = api->get_result(context, id, &result);
+            if (status == OSW_PENDING)
+                pause_ms(10);
         }
-        if (result.status == OSW_OK || result.status == OSW_PENDING || result.body_size)
-            return fail("token request must not succeed while signed out");
-        if (api->release(context, id) != OSW_OK)
-            return fail("release");
+        if (status != OSW_OK)
+            error = "token request did not complete";
+        else if (result.status == OSW_OK || result.body_size)
+            error = "token request must not succeed while signed out";
+        else if (api->release(context, id) != OSW_OK)
+            error = "release";
     } else if (status != OSW_SIGNED_OUT)
-        return fail("token submission must report signed out");
+        error = "token submission must report signed out";
 
-    if (api->stop(context) != OSW_OK)
-        return fail("stop");
+done:
+    if (api->stop(context) != OSW_OK && !error)
+        error = "stop";
     api->destroy(context);
-    return 0;
+    return error ? fail(error) : 0;
 }
 
 int main(int argc, char **argv) {
