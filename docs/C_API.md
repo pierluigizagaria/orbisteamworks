@@ -2,7 +2,8 @@
 
 The public header is `include/orbisteamworks/osw.h`. The caller initializes each
 structure's `size` and configures ABI version 1. Configuration contains an explicit
-runtime-library path, configured online ID, title, build and realm. Only one
+runtime-library path, optional online ID (empty: derived from the Steam persona), title, build
+and realm. Only one
 production context may exist in a process. Steam owns one signed-in account.
 
 `osw_start` starts the library thread; callers must query identity to learn whether
@@ -49,9 +50,13 @@ coverage of the tested failure contracts, not a guarantee against every possible
 internal exception. See the work log for build and game-acceptance status.
 
 `FRIENDS` returns a `friendList` snapshot with decimal-string account IDs,
-configured online IDs and presence. Only Steam friends with a known project
-online ID are exposed. Known names survive a friend's loss of presence for
-the current context; they are not persisted across process restarts.
+online IDs, `presence.onlineStatus` and `personalDetail.displayName` (the
+cleaned persona, at most 32 bytes; CTR ignores it). Only Steam friends
+currently running the project for the same title, build and realm are listed.
+Names of friends who leave stay cached for name resolution and invitations in
+the current context, are not listed, and are not persisted across restarts.
+Online IDs are 1–16 bytes of UTF-8 without control characters or surrounding
+spaces.
 `RESOLVE_NAME` takes `online_id` and resolves the local user or known friends.
 `INVITE_SEND` takes `session_id` and a `to` array of known online IDs or decimal
 account IDs. `INVITE_ACCEPT` and `INVITE_DECLINE` take `invitation_id`.

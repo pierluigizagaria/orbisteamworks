@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -209,8 +210,10 @@ int32_t osw_create(const osw_config *config, osw_context **output) {
             !namespace_part(copied.build) || !namespace_part(copied.realm) ||
             copied.realm.find('.') != std::string::npos)
             return OSW_INVALID_ARGUMENT;
-        if (!osw::core::valid_online_id(copied.online_id))
+        if (!copied.online_id.empty() && !osw::core::valid_online_id(copied.online_id))
             return OSW_INVALID_ARGUMENT;
+        const auto diagnostic = std::getenv("OSW_DIAG_ALL_FRIENDS");
+        copied.diag_all_friends = diagnostic && std::strcmp(diagnostic, "1") == 0;
         bool expected = false;
         if (!production_context.compare_exchange_strong(expected, true))
             return OSW_LIMIT;

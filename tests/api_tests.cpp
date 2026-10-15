@@ -175,7 +175,7 @@ void invalid_config_is_quiet() {
     std::strcpy(config.title, "5760");
     std::strcpy(config.build, "1.21");
     std::strcpy(config.realm, "normal");
-    std::strcpy(config.online_id, "!invalid");
+    std::strcpy(config.online_id, "bad\x01" "id");
     osw_context *context = nullptr;
     ExceptionObserver exceptions;
     require(osw_create(&config, &context) == OSW_INVALID_ARGUMENT && !context,

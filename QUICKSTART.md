@@ -37,18 +37,21 @@ You need:
    `redistributable_bin/win64/steam_api64.dll` (Windows) or
    `redistributable_bin/linux64/libsteam_api.so` (Linux) next to the host
    executable, or set its path in `steam_library`. Tested: SDK 1.65, Windows x64.
-2. **Choose your online ID:** 3–16 characters, a letter first, then letters,
-   digits, `_` or `-`.
-   - Your first login to a server binds this name to your SteamID permanently,
-     including letter case.
-   - Nobody else on that server can take it, in any letter case.
-   - Your Steam persona name is not used.
+2. **Your online ID is your Steam name.** The library uses your Steam persona
+   name, keeping any UTF-8 characters, dropping control characters and
+   surrounding spaces, and cutting it to 16 bytes. The game may not draw every
+   character.
+   - A server binds the name to your SteamID. If you rename yourself on Steam,
+     the server follows on your next login.
+   - Nobody else on that server can use the same name, in any letter case. If
+     your Steam name is already taken there, set `steam_online_id` to a
+     different name.
 3. **Configure the host.** In the shadPS4 fork's network settings:
 
    | Setting | Value |
    | --- | --- |
    | `np_provider` | `steam` |
-   | `steam_online_id` | your online ID |
+   | `steam_online_id` | empty (use your Steam name), or a name to use instead |
    | `steam_library` | path to the Steam API library (empty: next to the executable) |
    | `steam_title`, `steam_build` | `5760`, `1.21` for CTR |
    | `steam_realm` | the realm your operator gives you |
@@ -58,8 +61,8 @@ You need:
 4. **Start Steam first, then the game.**
    - If the Steam library or Steam itself is missing, the provider stays signed
      out and the host log states why. Nothing pretends to sign in.
-   - Only Steam friends seen running orbiSteamworks with the same title and
-     realm appear in the game.
+   - The in-game friend list shows only Steam friends who are playing right
+     now with the same title, build and realm.
 
 ## Operators
 

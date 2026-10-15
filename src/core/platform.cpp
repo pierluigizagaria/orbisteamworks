@@ -164,7 +164,7 @@ struct Platform::Impl {
             return false;
         return true;
     }
-    void refresh_friends() {
+    void refresh_friends(std::vector<Friend> *diagnostic = nullptr) {
         auto list = social.friends();
         std::set<Id> remaining;
         for (auto &user : list) {
@@ -173,13 +173,18 @@ struct Platform::Impl {
                 social.presence(user.id, "osw.title") != config.title ||
                 social.presence(user.id, "osw.build") != config.build ||
                 social.presence(user.id, "osw.realm") != config.realm) {
-                if (auto old = known_friends.find(user.id); old != known_friends.end())
+                if (auto old = known_friends.find(user.id); old != known_friends.end()) {
+                    old->second.first = user;
                     old->second.first.online = false;
+                } else if (diagnostic)
+                    diagnostic->push_back(user);
                 continue;
             }
             auto name = social.presence(user.id, "osw.name");
-            if (valid_online_id(name))
+            if (valid_online_id(name)) {
+                user.online = true;
                 known_friends[user.id] = {user, name};
+            }
         }
         std::erase_if(known_friends,
                       [&](const auto &item) { return !remaining.contains(item.first); });
@@ -187,14 +192,32 @@ struct Platform::Impl {
     Json user(Id id, const std::string &name) {
         return Json{{"accountId", std::to_string(id)}, {"onlineId", name}};
     }
+    Json friend_entry(const Friend &value, const std::string &name) {
+        const auto status = value.online ? "online" : "offline";
+        Json entry{{"user", user(value.id, name)},
+                   {"onlineId", name},
+                   {"accountId", std::to_string(value.id)},
+                   {"onlineStatus", status},
+                   {"presence", {{"onlineStatus", status}}}};
+        const auto display_name = clean_text(value.display_name, 32);
+        if (!display_name.empty())
+            entry["personalDetail"] = {{"displayName", display_name}};
+        return entry;
+    }
     Json friend_list() {
-        refresh_friends();
+        std::vector<Friend> diagnostic;
+        refresh_friends(config.diag_all_friends ? &diagnostic : nullptr);
         auto entries = Json::array();
+        std::set<std::string> names;
         for (const auto &[id, value] : known_friends) {
-            entries.push_back(Json{{"user", user(id, value.second)},
-                                   {"onlineId", value.second},
-                                   {"accountId", std::to_string(id)},
-                                   {"onlineStatus", value.first.online ? "online" : "offline"}});
+            names.insert(value.second);
+            if (value.first.online)
+                entries.push_back(friend_entry(value.first, value.second));
+        }
+        for (const auto &value : diagnostic) {
+            const auto name = "s" + std::to_string(static_cast<std::uint32_t>(value.id));
+            if (names.insert(name).second)
+                entries.push_back(friend_entry(value, name));
         }
         return Json{{"totalResults", entries.size()},
                     {"start", 0},

@@ -82,6 +82,7 @@ struct Runtime::Impl {
     flat::FriendByIndex friend_by_index = nullptr;
     flat::FriendState friend_state = nullptr;
     flat::FriendName friend_name = nullptr;
+    flat::PersonaName persona_name = nullptr;
     flat::GetPresence get_presence = nullptr;
     flat::SetPresence set_presence = nullptr;
     flat::RequestPresence request_presence = nullptr;
@@ -310,6 +311,7 @@ bool Runtime::start_social() {
     p->friend_by_index = p->find_symbol<flat::FriendByIndex>("SteamAPI_ISteamFriends_GetFriendByIndex");
     p->friend_state = p->find_symbol<flat::FriendState>("SteamAPI_ISteamFriends_GetFriendPersonaState");
     p->friend_name = p->find_symbol<flat::FriendName>("SteamAPI_ISteamFriends_GetFriendPersonaName");
+    p->persona_name = p->find_symbol<flat::PersonaName>("SteamAPI_ISteamFriends_GetPersonaName");
     p->get_presence = p->find_symbol<flat::GetPresence>("SteamAPI_ISteamFriends_GetFriendRichPresence");
     p->set_presence = p->find_symbol<flat::SetPresence>("SteamAPI_ISteamFriends_SetRichPresence");
     p->request_presence =
@@ -354,6 +356,10 @@ std::vector<core::Friend> Runtime::friends() {
             p->request_presence(p->friends_api, user);
     }
     return result;
+}
+std::string Runtime::persona() {
+    auto name = p->persona_name(p->friends_api);
+    return name ? std::string(name, strnlen(name, 256)) : std::string{};
 }
 std::string Runtime::presence(std::uint64_t user, const std::string &key) {
     auto value = p->get_presence(p->friends_api, user, key.c_str());

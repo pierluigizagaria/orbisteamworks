@@ -8,6 +8,8 @@
 
 namespace osw::core {
 bool valid_online_id(std::string_view id) noexcept;
+std::string clean_text(std::string_view text, size_t limit);
+std::string online_id_from_persona(std::string_view persona, std::uint64_t account);
 std::optional<std::uint64_t> parse_decimal_id(std::string_view text) noexcept;
 std::uint64_t decimal_id(std::string_view text);
 struct Token {

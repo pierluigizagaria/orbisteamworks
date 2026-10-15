@@ -59,6 +59,7 @@ runtime_error_case(member-count "$<TARGET_FILE:osw-test-api>" bad-member-count m
 runtime_error_case(ticket-buffer "$<TARGET_FILE:osw-test-api>" bad-ticket ticket 17)
 runtime_error_case(ticket-zero "$<TARGET_FILE:osw-test-api>" zero-ticket ticket 17)
 runtime_error_case(callback-abi "$<TARGET_FILE:osw-test-api>" bad-callback callback 22)
+runtime_error_case(persona-online-id "$<TARGET_FILE:osw-test-api>" none persona 0)
 if(WIN32)
   runtime_error_case(invalid-path "$<TARGET_FILE:osw-test-api>" none invalid-path 20)
 endif()

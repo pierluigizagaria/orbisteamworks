@@ -162,8 +162,152 @@ Result transfer(Platform &owner, Fixture &source, Platform &guest, Fixture &dest
     }
     throw std::runtime_error("payload did not complete within fixture rounds");
 }
+void friend_display_names() {
+    Config config{"", "LocalName", "5760", "1.21", "normal"};
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start(), "friend fixture starts");
+    social.friend_values = {{peer, "Display Name", true}, {peer + 1, "Diagnostic", true}};
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.name"] = "RemoteName";
+    ExceptionObserver exceptions;
+    platform.submit(request(1, "GET", "/v1/users/me/friendList?fields=onlineId,region,avatarUrl,"
+                                      "personalDetail,personalDetail.displayName,isOfficiallyVerified"));
+    auto response = single(platform);
+    check(response.http_status == 200, "WebAPI friend list succeeds");
+    auto list = Json::parse(body(response))["friendList"];
+    check(list.size() == 1, "diagnostic mode defaults off and excludes absent presence");
+    check(list[0]["personalDetail"]["displayName"] == "Display Name",
+          "known friend exposes persona display name");
+    check(list[0]["onlineId"] == "RemoteName" && list[0]["user"]["onlineId"] == "RemoteName",
+          "persona does not replace bound online ID");
+    check(list[0]["presence"]["onlineStatus"] == "online",
+          "Toolkit reads online state from presence.onlineStatus");
+    std::string controls;
+    for (int c = 0; c < 0x20; ++c)
+        controls += static_cast<char>(c);
+    controls += '\x7f';
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {"", ""}, {controls, ""}, {"A" + controls + "B", "AB"},
+        {"\xff\x80", ""}, {"A\xff" "B", "AB"}, {"\xc0\xaf", ""},
+        {"\xe0\x80\x80", ""}, {"\xed\xa0\x80", ""}, {"\xf0\x80\x80\x80", ""},
+        {"\xf4\x90\x80\x80", ""}, {"\xf5\x80\x80\x80", ""}, {"\xe2\x82", ""},
+        {"A\xe2" "B\xa1" "C", "ABC"},
+        {"\xc3\xa9\xe2\x82\xac\xf0\x9f\x8f\x81", "\xc3\xa9\xe2\x82\xac\xf0\x9f\x8f\x81"},
+        {std::string(33, 'a'), std::string(32, 'a')},
+        {std::string(30, 'a') + "\xc3\xa9", std::string(30, 'a') + "\xc3\xa9"},
+        {std::string(31, 'a') + "\xc3\xa9", std::string(31, 'a')},
+        {std::string(29, 'a') + "\xe2\x82\xac", std::string(29, 'a') + "\xe2\x82\xac"},
+        {std::string(30, 'a') + "\xe2\x82\xac", std::string(30, 'a')},
+        {std::string(28, 'a') + "\xf0\x9f\x8f\x81", std::string(28, 'a') + "\xf0\x9f\x8f\x81"},
+        {std::string(29, 'a') + "\xf0\x9f\x8f\x81", std::string(29, 'a')},
+        {std::string(31, 'a') + "\xff" "b", std::string(31, 'a') + "b"}};
+    for (const auto &[input, expected] : cases) {
+        social.friend_values[0].display_name = input;
+        platform.submit({2, OSW_FRIENDS});
+        response = single(platform);
+        check(response.http_status == 200, "malformed persona still produces valid JSON");
+        auto entry = Json::parse(body(response))["friendList"][0];
+        if (expected.empty())
+            check(!entry.contains("personalDetail"), "empty sanitized persona omits personalDetail");
+        else
+            check(entry["personalDetail"]["displayName"] == expected,
+                  "persona preserves valid UTF-8, strips invalid/control bytes and caps at 32 bytes");
+    }
+    social.presence_values[peer].clear();
+    social.friend_values[0].display_name = "Updated Persona";
+    platform.submit({3, OSW_FRIENDS});
+    check(Json::parse(body(single(platform)))["friendList"].empty(),
+          "friend without game presence is hidden");
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.name"] = "RemoteName";
+    social.friend_values[0].online = false;
+    platform.submit({4, OSW_FRIENDS});
+    auto returned = Json::parse(body(single(platform)))["friendList"];
+    check(returned.size() == 1 && returned[0]["presence"]["onlineStatus"] == "online" &&
+              returned[0]["personalDetail"]["displayName"] == "Updated Persona",
+          "friend back in game is listed online with refreshed persona");
+    platform.stop();
+    check(exceptions.quiet(), "persona sanitization raised a host first-chance exception");
+    std::cout << "friend display-name cases passed; first-chance exceptions: 0\n";
+}
+void diagnostic_friends() {
+    Config config{"", "LocalName", "5760", "1.21", "normal"};
+    config.diag_all_friends = true;
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start(), "diagnostic fixture starts");
+    const Id diagnostic_id = peer + 1;
+    const auto diagnostic_name = "s" + std::to_string(static_cast<std::uint32_t>(diagnostic_id));
+    social.friend_values = {{diagnostic_id, "Diagnostic\xff\n Persona", true},
+                            {peer, "Known Persona", true}};
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.name"] = "RemoteName";
+    ExceptionObserver exceptions;
+    const auto list_friends = [&] {
+        platform.submit({1, OSW_FRIENDS});
+        auto response = single(platform);
+        check(response.http_status == 200, "diagnostic list succeeds");
+        auto value = Json::parse(body(response));
+        check(value["size"] == value["friendList"].size() && value["totalResults"] == value["size"],
+              "diagnostic friend counts are consistent");
+        return value["friendList"];
+    };
+    auto list = list_friends();
+    check(list.size() == 2, "diagnostic friend without presence is listed");
+    auto entry = list[1];
+    check(entry["onlineId"] == diagnostic_name && entry["user"]["onlineId"] == diagnostic_name &&
+              diagnostic_name.size() <= 11 && entry["accountId"] == std::to_string(diagnostic_id) &&
+              entry["user"]["accountId"] == std::to_string(diagnostic_id),
+          "diagnostic alias uses low 32 bits and account IDs stay lossless");
+    check(entry["personalDetail"]["displayName"] == "Diagnostic Persona" &&
+              entry["onlineStatus"] == "online",
+          "diagnostic entry uses sanitized persona and Steam online state");
+    social.friend_values[0].online = false;
+    check(list_friends()[1]["onlineStatus"] == "offline", "diagnostic Steam offline state retained");
+    social.friend_values[0].online = true;
+    social.friend_values[0].display_name.clear();
+    check(!list_friends()[1].contains("personalDetail"), "empty diagnostic persona omitted");
+    create(platform, social);
+    const auto base = "/v1/sessions/" + std::to_string(lobby_id);
+    for (const auto &target : {std::to_string(diagnostic_id), diagnostic_name}) {
+        Json metadata{{"session_id", std::to_string(lobby_id)}, {"to", {target}}};
+        platform.submit({2, OSW_INVITE_SEND, 30000, metadata.dump()});
+        check(single(platform).http_status == 404 && social.invites == 0,
+              "diagnostic invite by ID or alias is rejected without native invitation");
+        platform.submit(request(3, "POST", base + "/invitations", metadata.dump()));
+        check(single(platform).http_status == 404 && social.invites == 0,
+              "WebAPI cannot invite a diagnostic friend");
+    }
+    platform.submit({4, OSW_INVITE_SEND, 30000,
+                     Json{{"session_id", std::to_string(lobby_id)},
+                          {"to", {"RemoteName", diagnostic_name}}}.dump()});
+    check(single(platform).http_status == 404 && social.invites == 0,
+          "mixed invite validates every recipient before sending any invitation");
+    platform.submit({5, OSW_RESOLVE_NAME, 30000, Json{{"online_id", diagnostic_name}}.dump()});
+    check(single(platform).http_status == 404, "diagnostic alias never enters name resolution");
+    social.presence_values[peer]["osw.name"] = diagnostic_name;
+    list = list_friends();
+    check(list.size() == 1 && list[0]["accountId"] == std::to_string(peer) &&
+              list[0]["personalDetail"]["displayName"] == "Known Persona",
+          "known friend wins diagnostic name collision regardless of enumeration order");
+    social.presence_values[peer].clear();
+    list = list_friends();
+    check(list.empty(), "cached known friend out of game stays hidden and keeps its name");
+    social.friend_values.pop_back();
+    check(list_friends().size() == 1, "removed known friend no longer hides diagnostic entry");
+    platform.submit({6, OSW_RESOLVE_NAME, 30000, Json{{"online_id", diagnostic_name}}.dump()});
+    check(single(platform).http_status == 404, "refresh does not cache diagnostic name");
+    social.friend_values.clear();
+    check(list_friends().empty(), "diagnostic list does not retain removed friends");
+    platform.stop();
+    check(exceptions.quiet(), "diagnostic friend operations raised a host first-chance exception");
+    std::cout << "diagnostic friend isolation passed; native invitations: 0; first-chance exceptions: 0\n";
+}
 int main() {
     try {
+        friend_display_names();
+        diagnostic_friends();
         Config config{"", "LocalName", "5760", "1.21", "normal"};
         Identity identity{true, self, "LocalName"};
         {
@@ -184,7 +328,7 @@ int main() {
                   "truncated multipart has an explicit failure");
             invalid_social.friend_values = {{peer, "Display", true}};
             invalid_social.presence_values[peer] = invalid_social.presence_values[self];
-            invalid_social.presence_values[peer]["osw.name"] = "!invalid";
+            invalid_social.presence_values[peer]["osw.name"] = "bad\x01" "name";
             invalid_platform.submit({3, OSW_FRIENDS});
             check(Json::parse(body(single(invalid_platform)))["friendList"].empty(),
                   "invalid remote online ID excluded");

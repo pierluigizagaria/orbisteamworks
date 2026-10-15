@@ -47,7 +47,8 @@ int main(int argc, char **argv) {
                 config.library_path[0] = static_cast<char>(0xff);
                 config.library_path[1] = 0;
             }
-            std::strcpy(config.online_id, "FixtureUser");
+            if (operation != "persona")
+                std::strcpy(config.online_id, "FixtureUser");
             std::strcpy(config.title, "5760");
             std::strcpy(config.build, "1.21");
             std::strcpy(config.realm, "offline-fixture");
@@ -60,7 +61,10 @@ int main(int argc, char **argv) {
                 check(osw_get_identity(context.value, &identity) == OSW_OK, "read identity");
                 return identity.signed_in || identity.reason_code;
             });
-            if (operation == "startup" || operation == "invalid-path") {
+            if (operation == "persona") {
+                check(identity.signed_in && std::string(identity.online_id) == "Fixture Persona",
+                      "empty configured online ID derives the cleaned Steam persona");
+            } else if (operation == "startup" || operation == "invalid-path") {
                 check(!identity.signed_in && identity.reason_code == reason,
                       "startup error must preserve its distinct reason");
             } else {

@@ -8,6 +8,7 @@
 namespace osw::core {
 struct Config {
     std::string library_path, online_id, title, build, realm;
+    bool diag_all_friends = false;
 };
 struct Identity {
     bool signed_in = false;

@@ -32,7 +32,12 @@ class SteamBackend final : public core::Backend {
             fail_runtime();
             return;
         }
-        identity_value = {true, runtime->id(), config.online_id, {}, 0};
+        const auto account = runtime->id();
+        identity_value = {true, account,
+                          config.online_id.empty()
+                              ? core::online_id_from_persona(runtime->persona(), account)
+                              : config.online_id,
+                          {}, 0};
         platform = std::make_unique<core::Platform>(config, identity_value, *runtime);
         if (!platform->start()) {
             stop();
@@ -119,7 +124,7 @@ class SteamBackend final : public core::Backend {
                     finish(pending->id, OSW_UNAVAILABLE);
                 } else {
                     auto token = core::try_encode_token(
-                        {identity_value.account_id, pending->ticket.bytes, config.online_id});
+                        {identity_value.account_id, pending->ticket.bytes, identity_value.online_id});
                     if (token) {
                         core::Result result{pending->id};
                         result.body.assign(token->begin(), token->end());

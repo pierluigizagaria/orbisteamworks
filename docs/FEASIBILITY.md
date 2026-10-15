@@ -106,16 +106,25 @@ What the fork changes:
 
 - **Account ID:** SteamID64. Use decimal strings in JSON and never floating
   point.
-- **Online ID:** the name configured for the user in the host, within PS4 rules
-  (3–16 characters).
+- **Online ID (user decision, 2026-10-15):** the user's Steam persona name,
+  derived at each start unless the host configures one. It keeps any valid
+  UTF-8: invalid bytes and control characters are dropped, surrounding spaces
+  trimmed and the result cut to 16 bytes on a character boundary. The game may
+  not render every character; that is accepted. An empty result falls back to
+  `Player<digits>`.
+  - CTR displays only the online ID, both for the local player and on the
+    friend page, and resolves friends on the publisher by that string
+    ([evidence](../../docs/research/CTR_FRIEND_LIST_NAMES.md)). It must
+    therefore be unique on the publisher.
   - The library publishes it to Steam friends through rich presence.
-  - Demonware binds the online ID to the SteamID at first admission and refuses
-    an online ID already bound to another SteamID.
-  - Steam persona names are display data only.
-- **Friends:** Steam friends whose online ID is known, either live through rich
-  presence or cached locally. A friend counts as online when running
-  orbiSteamworks for the same title and realm. Friends without a known online ID
-  are not exposed, because the publisher could not resolve them anyway.
+  - Demonware binds it case-insensitively to the SteamID. The same SteamID may
+    change it on a later admission (following a persona rename), which also
+    updates its 12/10 name and leaderboard rows. A name bound to another
+    SteamID is refused; that player then configures a different online ID.
+- **Friends:** only Steam friends currently running orbiSteamworks for the same
+  title, build and realm are listed, with `presence.onlineStatus` online.
+  Friends who leave the game are hidden; their names stay cached for the
+  context so pending invitations and name resolution keep working.
 - **One local user per machine.** Steam allows one account per client.
 
 ## Authentication

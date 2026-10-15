@@ -21,10 +21,10 @@ state before launching another instance. The user subsequently confirmed the
 Online menu; platform-party creation, matchmaking search and gameplay remain
 separate acceptance steps.
 
-The configured online ID is `OrbiPlayerA`. It is a PoC name, not the Steam
-persona name. Change `steam_online_id` in the candidate config before the
-first game admission if a different name is desired: the publisher binds
-the first admitted name to the Steam account. The normal publisher has a
+`steam_online_id` is empty since 2026-10-15, so the online ID is the cleaned
+Steam persona name (earlier PoC runs used `OrbiPlayerA`). Set it only to force
+a different name, for example after a name conflict. The publisher binds the
+name to the Steam account and follows later renames of the same account. The normal publisher has a
 fresh, separate `runtime/steam-poc/data/ctrnf.db`; prior ledgers are not migrated.
 Realm is `ctrnf-poc-normal`, title `5760`, build `1.21`, AppID `480`.
 
@@ -62,6 +62,44 @@ Only one Steam account/machine is available. No two-account race, friend-page
 acceptance, real invite/accept, grouped search or LAN/WAN acceptance has been
 performed. The native port remains paused. Those tests require independent
 Steam clients and human gameplay; fixtures do not substitute for them.
+
+## Lab-only friend display-name test
+
+The local branch `lab/friend-display-name` adds `personalDetail.displayName`
+from the Steam persona to known friend entries. It drops invalid UTF-8 bytes
+and control characters below 0x20 or equal to 0x7F, caps the result at 32 bytes
+on a UTF-8 character boundary, and omits the field when empty. Persona names
+remain display data; bound online IDs and account IDs retain their meaning.
+
+`OSW_DIAG_ALL_FRIENDS=1` is **off by default and for this lab test only**.
+The C API reads it once when creating the context and passes a boolean to the
+core. Only the exact value `1` enables it. It also exposes Steam friends without
+compatible project presence, using `s<accountID>` (the decimal low 32 bits of
+the SteamID64) as the online ID, the full decimal SteamID64 as the account ID,
+the sanitized persona as displayName and Steam's online/offline persona state.
+These entries exist only in the friend-list output and never enter the known
+friend cache. Name resolution and invitation sending by account ID or alias
+return 404 for them. Known friends take precedence over diagnostic aliases on
+name collisions. This does not make unrelated Steam friends eligible for CTR
+parties or native Steam invitations.
+
+Keep the existing publisher running and use the private launcher
+`../shadps4/out/tools/start-steam-game-friends-diag.cmd` for the manual test.
+It sets the variable only in its local launcher/process environment; the
+existing `start-steam-game.cmd` is unchanged. With diagnostic mode enabled,
+the local publisher may log the diagnostic online IDs of the user's Steam
+friends through service 12/task 10 name lookups. Keep those logs private.
+
+Result (2026-10-15): the page showed the `s<number>` online IDs, all OFFLINE;
+CTR ignores `displayName`. See `../../docs/research/CTR_FRIEND_LIST_NAMES.md`.
+
+Open CTR's friend page manually and record whether it shows Steam persona
+names (`displayName`), `s<number>` online IDs, both, or no entries/names.
+Persona names would support the displayName hypothesis; aliases alone would
+support onlineId rendering. An empty page is inconclusive because the game may
+filter entries after publisher name lookup fails. Paired friend resolution,
+invitations and racing remain separate acceptance gates. No game launch or UI
+input is part of preparing this candidate.
 
 ## Verified boundaries and remaining limits
 

@@ -6,13 +6,39 @@ namespace osw::core {
 namespace {
 constexpr std::string_view alphabet =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-bool alpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+size_t utf8_length(std::string_view text, size_t i) noexcept {
+    const auto first = static_cast<unsigned char>(text[i]);
+    const size_t length = first < 0x80                    ? 1
+                          : first >= 0xc2 && first <= 0xdf ? 2
+                          : first >= 0xe0 && first <= 0xef ? 3
+                          : first >= 0xf0 && first <= 0xf4 ? 4
+                                                           : 0;
+    if (!length || length > text.size() - i)
+        return 0;
+    std::uint32_t codepoint = first & (length == 1 ? 0x7f : length == 2 ? 0x1f : length == 3 ? 0x0f : 0x07);
+    for (size_t j = 1; j < length; ++j) {
+        const auto next = static_cast<unsigned char>(text[i + j]);
+        if ((next & 0xc0) != 0x80)
+            return 0;
+        codepoint = (codepoint << 6) | (next & 0x3f);
+    }
+    if ((length == 2 && codepoint < 0x80) || (length == 3 && codepoint < 0x800) ||
+        (length == 4 && codepoint < 0x10000) || (codepoint >= 0xd800 && codepoint <= 0xdfff) ||
+        codepoint > 0x10ffff || codepoint < 0x20 || codepoint == 0x7f)
+        return 0;
+    return length;
+}
 const char *online_id_error(std::string_view id) noexcept {
-    if (id.size() < 3 || id.size() > 16 || !alpha(id.front()))
-        return "Online ID needs 3-16 ASCII characters and a letter first";
-    for (char c : id)
-        if (!alpha(c) && !(c >= '0' && c <= '9') && c != '_' && c != '-')
-            return "Online ID contains unsupported characters";
+    if (id.empty() || id.size() > 16)
+        return "Online ID needs 1-16 bytes";
+    if (id.front() == ' ' || id.back() == ' ')
+        return "Online ID has surrounding spaces";
+    for (size_t i = 0; i < id.size();) {
+        const auto length = utf8_length(id, i);
+        if (!length)
+            return "Online ID contains invalid UTF-8 or control characters";
+        i += length;
+    }
     return nullptr;
 }
 void check_online_id(std::string_view id) {
@@ -70,6 +96,31 @@ int nibble(char c) {
 } // namespace
 
 bool valid_online_id(std::string_view id) noexcept { return !online_id_error(id); }
+std::string clean_text(std::string_view text, size_t limit) {
+    std::string result;
+    for (size_t i = 0; i < text.size();) {
+        const auto length = utf8_length(text, i);
+        if (!length) {
+            ++i;
+            continue;
+        }
+        if (result.empty() && text[i] == ' ') {
+            ++i;
+            continue;
+        }
+        if (result.size() + length > limit)
+            break;
+        result.append(text.substr(i, length));
+        i += length;
+    }
+    while (!result.empty() && result.back() == ' ')
+        result.pop_back();
+    return result;
+}
+std::string online_id_from_persona(std::string_view persona, std::uint64_t account) {
+    auto name = clean_text(persona, 16);
+    return name.empty() ? "Player" + std::to_string(account % 100000) : name;
+}
 std::optional<std::uint64_t> parse_decimal_id(std::string_view text) noexcept {
     if (text.empty() || text.front() == '0')
         return {};

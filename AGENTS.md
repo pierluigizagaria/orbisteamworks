@@ -62,9 +62,13 @@ realm. Never act on unrelated AppID 480 lobbies.
 
 ## Behavior rules
 
-- **Identity.** SteamID64 is the account ID. The online ID is the name
-  configured in the host, bound to the SteamID by the publisher. Persona names
-  are display data. Preserve 64-bit IDs losslessly.
+- **Identity.** SteamID64 is the account ID. The online ID is the user's
+  Steam persona name, cleaned to 1–16 bytes of UTF-8 without control
+  characters (user decision 2026-10-15), unless the host configures one. The
+  publisher binds it to the SteamID and follows renames. CTR shows only online
+  IDs. Preserve 64-bit IDs losslessly.
+- **Friends.** List only friends currently in the game for the same title,
+  build and realm, with `presence.onlineStatus`.
 - **No fabricated success.** Unsupported operations return explicit errors.
 - **Membership.** Never report Steam lobby membership as committed game-party
   membership before the game's own membership request.

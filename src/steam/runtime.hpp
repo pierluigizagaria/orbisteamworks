@@ -48,6 +48,7 @@ class Runtime : public core::Social {
     bool start_social();
     std::vector<core::SocialEvent> take_social_events();
     std::vector<core::Friend> friends() override;
+    std::string persona();
     std::string presence(std::uint64_t user, const std::string &key) override;
     bool set_presence(const std::string &key, const std::string &value) override;
     std::uint64_t create_lobby(int limit) override;

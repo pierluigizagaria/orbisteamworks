@@ -53,7 +53,7 @@ The token has exactly four fields and three dots. No field contains a dot.
 | Version | The literal `osw1`. Anything else is refused |
 | SteamID64 | Nonzero canonical unsigned 64-bit decimal: no sign, no leading zero, no whitespace. Parse it as an integer, never as floating point |
 | Ticket | Hex encoding of the Steam session ticket bytes. Verifiers accept both cases. The canonical identity of a ticket is its **decoded bytes** |
-| Online ID | Unpadded base64url of the online ID, which must be canonical: re-encoding the decoded bytes gives the same text, so `=` and nonzero trailing bits are refused. The decoded ID matches `^[A-Za-z][A-Za-z0-9_-]{2,15}$` (3–16 ASCII characters, letter first) |
+| Online ID | Unpadded base64url of the online ID, which must be canonical: re-encoding the decoded bytes gives the same text, so `=` and nonzero trailing bits are refused. The decoded ID is 1–16 bytes of valid UTF-8, without control characters (U+0000–U+001F, U+007F) and without a leading or trailing space. Issuers derive it from the Steam persona name |
 
 ### Size limits
 
@@ -62,7 +62,7 @@ The token has exactly four fields and three dots. No field contains a dot.
 | Whole token | 1–4096 ASCII characters | Fits the 4097-byte PS4 `OrbisNpIdToken` buffer with its NUL. The Demonware envelope reader accepts at most 4096 |
 | Ticket bytes | Issuer: at most `floor((4096 − 7 − len(steam-id) − len(online-id-b64)) / 2)`, and at most 2048 (the issuer's buffer) | The token limit dominates: at most 2042 bytes, and 2025 bytes for a 17-digit SteamID with a 16-character online ID |
 | Ticket bytes at the helper | 1–2048 | `BeginAuthSession` input bound |
-| Online ID | 3–16 characters; 4–22 encoded | PS4 online-ID rules |
+| Online ID | 1–16 bytes; 2–22 encoded | The PS4 online-ID field holds 16 bytes |
 | Measured | 234-byte ticket, 502-character token | Gate 1, online ID `OswTest`, bound and unbound |
 
 ### Meaning
@@ -152,10 +152,14 @@ account.
 | 14 | `osw1.12345.00fg.T3N3VGVzdA` | Reject: non-hex |
 | 15 | `osw1.12345.00ff.T3N3VGVzdA==` | Reject: padding |
 | 16 | `osw1.12345.00ff.T3N3VGVzdB` | Reject: noncanonical base64url |
-| 17 | `osw1.12345.00ff.MXN3` (`1sw`) | Reject: online ID starts with a digit |
-| 18 | `osw1.12345.00ff.T3c` (`Ow`) | Reject: online ID too short |
+| 17 | `osw1.12345.00ff.MXN3` (`1sw`) | Accept: an online ID may start with a digit |
+| 18 | `osw1.12345.00ff.T3c` (`Ow`) | Accept: two-byte online ID |
 | 19 | `osw1.12345.00ff.QTIzNDU2Nzg5MDEyMzQ1Njc` | Reject: online ID of 17 characters |
-| 20 | `osw1.12345.00ff.T3N3IFRlc3Q` (`Osw Test`) | Reject: space in online ID |
+| 20 | `osw1.12345.00ff.T3N3IFRlc3Q` (`Osw Test`) | Accept: space inside an online ID |
+| 20a | `osw1.12345.00ff.UGnDqSBaLg` (`Pié Z.`) | Accept: non-ASCII UTF-8 |
+| 20b | `osw1.12345.00ff.IE9zdw` (` Osw`) | Reject: leading space |
+| 20c | `osw1.12345.00ff.T3N3AQ` (`Osw` + U+0001) | Reject: control character |
+| 20d | `osw1.12345.00ff._w` (byte `ff`) | Reject: invalid UTF-8 |
 | 21 | `osw1.12345.00ff.T3N3+GVzdA` | Reject: standard-base64 character |
 | 22 | `osw1.12345.00ff.T3N3VGVzdA.x` | Reject: five fields |
 | 23 | `osw1.12345.00ff` | Reject: three fields |
@@ -301,8 +305,11 @@ the same generic error, so clients learn no detail.
 7. **Record atomically**, in one database transaction:
    - If the SteamID has no binding, bind it to the online ID. Names are unique
      case-insensitively through a lowercase key across SteamIDs.
-   - If a binding exists, require exactly the same string. Bindings are
-     immutable in this version, including letter case.
+   - If a binding exists with a different string, the same SteamID is
+     renaming itself (for example after a Steam persona change): update the
+     binding, the name used by friend lookups and the player's leaderboard
+     rows. A name bound to another SteamID, in any letter case, fails the
+     transaction.
    - Insert `hash` into the consumed set. A duplicate fails the transaction.
 8. **Admit** with:
 

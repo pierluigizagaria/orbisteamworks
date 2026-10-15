@@ -144,6 +144,7 @@ using FriendCount = int (*)(void *, int);
 using FriendByIndex = Id (*)(void *, int, int);
 using FriendState = int (*)(void *, Id);
 using FriendName = const char *(*)(void *, Id);
+using PersonaName = const char *(*)(void *);
 using GetPresence = const char *(*)(void *, Id, const char *);
 using SetPresence = bool (*)(void *, const char *, const char *);
 using RequestPresence = void (*)(void *, Id);

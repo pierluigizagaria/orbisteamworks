@@ -138,6 +138,7 @@ EXPORT int SteamAPI_ISteamFriends_GetFriendCount(void *, int) {
 EXPORT Id SteamAPI_ISteamFriends_GetFriendByIndex(void *, int, int) { return 0; }
 EXPORT int SteamAPI_ISteamFriends_GetFriendPersonaState(void *, Id) { return 0; }
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendPersonaName(void *, Id) { return ""; }
+EXPORT const char *SteamAPI_ISteamFriends_GetPersonaName(void *) { return " Fixture\x01 Persona \xf0\x9f\x8f\x8e"; }
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendRichPresence(void *, Id, const char *) {
     return "";
 }
