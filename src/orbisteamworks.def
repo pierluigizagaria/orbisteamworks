@@ -1,0 +1,13 @@
+; Exports of the runtime-loadable orbisteamworks.dll: the osw.h C API only.
+LIBRARY orbisteamworks
+EXPORTS
+    osw_create
+    osw_start
+    osw_get_identity
+    osw_submit
+    osw_get_result
+    osw_cancel
+    osw_release
+    osw_poll_event
+    osw_stop
+    osw_destroy

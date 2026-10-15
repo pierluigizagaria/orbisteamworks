@@ -1,0 +1,54 @@
+#pragma once
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace osw::core {
+struct Friend {
+    std::uint64_t id = 0;
+    std::string display_name;
+    bool online = false;
+};
+struct SocialEvent {
+    enum Kind {
+        created,
+        entered,
+        data,
+        member,
+        invitation,
+        join_requested,
+        friends_changed,
+        message
+    } kind;
+    std::uint64_t call = 0, lobby = 0, user = 0;
+    bool success = false;
+    int detail = 0;
+    std::string payload;
+};
+class Social {
+  public:
+    virtual ~Social() = default;
+    virtual std::vector<Friend> friends() = 0;
+    virtual std::string presence(std::uint64_t user, const std::string &key) = 0;
+    virtual bool set_presence(const std::string &key, const std::string &value) = 0;
+    virtual std::uint64_t create_lobby(int limit) = 0;
+    virtual std::uint64_t join_lobby(std::uint64_t lobby) = 0;
+    virtual void leave_lobby(std::uint64_t lobby) = 0;
+    virtual bool invite(std::uint64_t lobby, std::uint64_t user) = 0;
+    virtual bool request_data(std::uint64_t lobby) = 0;
+    virtual std::string lobby_data(std::uint64_t lobby, const std::string &key) = 0;
+    virtual bool set_lobby_data(std::uint64_t lobby, const std::string &key,
+                                const std::string &value) = 0;
+    virtual bool delete_lobby_data(std::uint64_t lobby, const std::string &key) = 0;
+    virtual std::uint64_t owner(std::uint64_t lobby) = 0;
+    virtual std::vector<std::uint64_t> members(std::uint64_t lobby) = 0;
+    virtual std::string member_data(std::uint64_t lobby, std::uint64_t user,
+                                    const std::string &key) = 0;
+    virtual void set_member_data(std::uint64_t lobby, const std::string &key,
+                                 const std::string &value) = 0;
+    virtual bool set_joinable(std::uint64_t lobby, bool joinable) = 0;
+    virtual bool set_limit(std::uint64_t lobby, int limit) = 0;
+    virtual bool set_friends_visible(std::uint64_t lobby, bool visible) = 0;
+    virtual bool send_message(std::uint64_t lobby, const std::string &bytes) = 0;
+};
+} // namespace osw::core

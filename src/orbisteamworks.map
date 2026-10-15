@@ -1,0 +1,17 @@
+/* Exports of the runtime-loadable liborbisteamworks.so: the osw.h C API only.
+ * The node name follows OSW_ABI_VERSION; a new ABI adds a new node. */
+OSW_ABI_1 {
+  global:
+    osw_create;
+    osw_start;
+    osw_get_identity;
+    osw_submit;
+    osw_get_result;
+    osw_cancel;
+    osw_release;
+    osw_poll_event;
+    osw_stop;
+    osw_destroy;
+  local:
+    *;
+};

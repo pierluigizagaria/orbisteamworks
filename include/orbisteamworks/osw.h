@@ -1,0 +1,104 @@
+#ifndef ORBISTEAMWORKS_OSW_H
+#define ORBISTEAMWORKS_OSW_H
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define OSW_ABI_VERSION 1u
+typedef struct osw_context osw_context;
+enum osw_status {
+    OSW_OK = 0,
+    OSW_PENDING = 1,
+    OSW_INVALID_ARGUMENT = -1,
+    OSW_SIGNED_OUT = -2,
+    OSW_UNAVAILABLE = -3,
+    OSW_NOT_SUPPORTED = -4,
+    OSW_ABORTED = -5,
+    OSW_TIMEOUT = -6,
+    OSW_LIMIT = -7,
+    OSW_NOT_FOUND = -8
+};
+enum osw_operation {
+    OSW_TOKEN = 1,
+    OSW_WEBAPI = 2,
+    OSW_FRIENDS = 3,
+    OSW_INVITE_SEND = 4,
+    OSW_INVITE_ACCEPT = 5,
+    OSW_INVITE_DECLINE = 6,
+    OSW_RESOLVE_NAME = 7
+};
+enum osw_event_type {
+    OSW_IDENTITY_CHANGED = 1,
+    OSW_REQUEST_COMPLETE = 2,
+    OSW_FRIENDS_CHANGED = 3,
+    OSW_INVITATION_RECEIVED = 4,
+    OSW_INVITATION_ACCEPTED = 5,
+    OSW_SESSION_CHANGED = 6,
+    OSW_RESYNC = 7
+};
+
+typedef struct osw_config {
+    uint32_t size, abi_version;
+    char library_path[1024];
+    char online_id[17];
+    char title[17];
+    char build[65];
+    char realm[65];
+} osw_config;
+
+typedef struct osw_identity {
+    uint32_t size;
+    int32_t signed_in, reason_code;
+    uint64_t account_id;
+    char online_id[17];
+    char reason[160];
+} osw_identity;
+
+/* Metadata is UTF-8 JSON. The body is opaque binary. Both are copied on entry.
+ * Operation schemas are documented in docs/C_API.md. No credential is logged. */
+typedef struct osw_request {
+    uint32_t size, operation, timeout_ms;
+    const char *metadata;
+    size_t metadata_size;
+    const uint8_t *body;
+    size_t body_size;
+} osw_request;
+
+/* Pointers remain valid until osw_release for this request, or osw_destroy.
+ * The host must not release/destroy while another host thread reads them. */
+typedef struct osw_result {
+    uint32_t size;
+    int32_t status, http_status;
+    const char *metadata;
+    size_t metadata_size;
+    const uint8_t *body;
+    size_t body_size;
+} osw_result;
+
+typedef struct osw_event {
+    uint32_t size, type;
+    uint64_t request_id, account_id;
+    char session_id[32], invitation_id[65], online_id[17];
+    uint32_t change_kind; /* Session: 1 committed member joined, 2 left, 3 metadata. */
+} osw_event;
+
+int32_t osw_create(const osw_config *config, osw_context **output);
+int32_t osw_start(osw_context *context);
+int32_t osw_get_identity(osw_context *context, osw_identity *output);
+int32_t osw_submit(osw_context *context, const osw_request *request, uint64_t *request_id);
+int32_t osw_get_result(osw_context *context, uint64_t request_id, osw_result *output);
+int32_t osw_cancel(osw_context *context, uint64_t request_id);
+int32_t osw_release(osw_context *context, uint64_t request_id);
+int32_t osw_poll_event(osw_context *context, osw_event *output);
+/* Stop joins the owner thread and completes pending requests with OSW_ABORTED.
+ * Completed results survive stop. Destroy must not race any other API call. */
+int32_t osw_stop(osw_context *context);
+void osw_destroy(osw_context *context);
+
+#ifdef __cplusplus
+}
+#endif
+#endif
