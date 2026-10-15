@@ -1,5 +1,14 @@
 # Project instructions
 
+## Superseding P2P task (2026-10-16)
+
+`docs/P2P_DESIGN.md` and the workspace `docs/drafts/codex-p2p-native.md` now
+govern the native P2P work. They supersede native-host deferral, unchanged
+publisher matchmaking and mandatory helper validation for local admission only.
+Central Steam admission retains its existing helper. The user authorized local
+implementation, tests, commits and parallel agents, with no publication. Keep
+the library title-agnostic and Steam symbols confined to `src/steam/`.
+
 Write project documentation in English and respond in the conversation language.
 Use the display name `orbiSteamworks` and repository directory `orbisteamworks`.
 
