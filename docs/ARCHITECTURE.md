@@ -7,6 +7,12 @@ selection, loopback game endpoint and hidden companion configuration. The
 companion uses [COMPANION_PROTOCOL.md](COMPANION_PROTOCOL.md); it owns publisher
 rules and local data, while the library owns identity, directory and transport.
 
+The optional endpoint API adds `src/core/endpoints.*`: a bounded registry of
+copied canonical-to-proxy and proxy-to-canonical routes, shared by the worker and
+host readers through a short mutex. It has no guest/host types or title packet
+semantics. The independent C API and companion contract are sufficient for any
+host/publisher integration; no sibling build or runtime layout is required.
+
 `src/core/p2p.*` implements the bounded directory/peer protocol and per-peer UDP
 proxies; `src/core/local_io.*` owns child pipes, Windows Job Object and loopback
 sockets. `src/lab/` is an explicitly simulated multi-process file-backed hub with

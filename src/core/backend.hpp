@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace osw::core {
+class EndpointRoutes;
 struct Config {
     std::string library_path, online_id, title, build, realm;
     bool diag_all_friends = false;
@@ -13,6 +14,8 @@ struct Config {
     std::uint32_t backend = 0, game_port = 3074;
     std::uint64_t lab_account_id = 0;
     std::string lab_root, companion_path, companion_working_dir, companion_environment, game_bind;
+    bool virtual_endpoints = false;
+    std::shared_ptr<EndpointRoutes> endpoints;
 };
 struct Identity {
     bool signed_in = false;

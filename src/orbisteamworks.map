@@ -16,5 +16,5 @@ OSW_ABI_1 {
     *;
 };
 OSW_ABI_2 {
-  global: osw_create_v2;
+  global: osw_create_v2; osw_enable_virtual_endpoints; osw_get_local_endpoint; osw_route_endpoint;
 } OSW_ABI_1;

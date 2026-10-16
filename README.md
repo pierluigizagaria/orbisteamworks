@@ -42,6 +42,13 @@ Scores, TUS, trophies, Matching2 and signaling are not implemented. Game traffic
 uses the host's sockets; ABI 2 can supply per-peer loopback UDP proxies backed
 by Steam transport.
 
+Any host can opt into the copied canonical endpoint/UDP route API without
+changing ABI 1/2 structures. Identity, routing authorization and opaque transport
+stay in this library; guest socket translation stays in the host, and title
+address formats stay in the publisher. The standalone build and tests require
+no sibling host or publisher checkout. Integration fixtures in other projects
+are optional consumers of the documented interfaces.
+
 ## Requirements and limits
 
 - **Steam on every player's PC.** Steam allows one account per client, so each

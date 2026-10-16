@@ -1,4 +1,5 @@
 #include "core/blobs.hpp"
+#include "core/endpoints.hpp"
 #include "core/local_io.hpp"
 #include "core/multipart.hpp"
 #include "core/p2p.hpp"
@@ -475,7 +476,7 @@ void friend_presence_events() {
     check(events.size() == 1 && events[0].change_kind == 2 && events[0].online_id == "Returned",
           "removed friend retains its last copied label");
 }
-void p2p_advertisement_eligibility() {
+void p2p_advertisement_eligibility(bool virtual_mode = false) {
     struct PeerFixture : Fixture {
         std::vector<PeerMessage> incoming;
         bool send_ok = true;
@@ -487,11 +488,13 @@ void p2p_advertisement_eligibility() {
         }
     } social;
     Config config{"", "LocalName", "5760", "1.21", "grant-fixture"};
+    config.virtual_endpoints = virtual_mode;
+    config.endpoints = std::make_shared<EndpointRoutes>();
     config.game_bind = "127.0.0.124";
     UdpSocket game(config.game_bind);
     config.game_port = game.port();
     social.friend_values = {{peer, "Remote", true}};
-    social.presence_values[peer] = {{"osw.protocol", "1"}, {"osw.title", config.title},
+    social.presence_values[peer] = {{"osw.protocol", virtual_mode ? "2" : "1"}, {"osw.title", config.title},
                                   {"osw.build", config.build}, {"osw.realm", config.realm}};
     P2P p2p(config, {true, self, "LocalName"}, social);
     p2p.process({});
@@ -502,13 +505,13 @@ void p2p_advertisement_eligibility() {
         check(update.results.size() == 1 && update.results[0].status == OSW_OK,
               "fixture advertisement update succeeds");
     };
-    const auto query = [&] {
+    const auto query = [&](bool wrong_protocol = false) {
         social.incoming.push_back({peer, 49, Json{{"v", 1}, {"op", "query"}, {"id", "1"},
-            {"context", "fixture"}, {"protocol", "osw/1"}, {"title", config.title},
+            {"context", "fixture"}, {"protocol", (virtual_mode != wrong_protocol) ? "osw/2" : "osw/1"}, {"title", config.title},
             {"build", config.build}, {"realm", config.realm}}.dump()});
         p2p.poll();
     };
-    const std::string datagram = std::string("OSW1") + std::string(8, '\0') + "fixture";
+    const std::string datagram = std::string(virtual_mode ? "OSW2" : "OSW1") + std::string(8, '\0') + "fixture";
     const auto sent_count = [&] {
         p2p.submit({2, OSW_P2P, 30000, "{\"op\":\"status\"}"});
         return Json::parse(p2p.poll().results[0].metadata)["proxy_sent"].get<Id>();
@@ -520,11 +523,27 @@ void p2p_advertisement_eligibility() {
         return sent_count() > before;
     };
     set_ad("YWQ=");
+    query(true);
+    check(!datagram_delivered(), "other address mode cannot acquire an advertisement grant");
     query();
     check(datagram_delivered(), "a served live ad authorizes initial inbound UDP");
+    Endpoint physical;
+    const auto remote_endpoint = virtual_endpoint(peer, config);
+    if (virtual_mode)
+        check(config.endpoints->lookup(OSW_ROUTE_OUTBOUND, remote_endpoint, physical) == OSW_OK,
+              "first inbound delivery publishes its reverse route before the host receives");
+    auto before_wrong_mode = sent_count();
+    auto wrong_mode = datagram;
+    wrong_mode[3] = virtual_mode ? '1' : '2';
+    social.incoming.push_back({peer, 48, wrong_mode});
+    p2p.poll();
+    check(sent_count() == before_wrong_mode, "carrier mode is checked even with a cached authorized friend");
     social.friend_values[0].online = false; // Preserve stale namespace presence deliberately.
     p2p.process({{SocialEvent::friends_changed}});
     check(!datagram_delivered(), "offline friend immediately loses advertisement grant");
+    if (virtual_mode)
+        check(config.endpoints->lookup(OSW_ROUTE_OUTBOUND, remote_endpoint, physical) == OSW_NOT_FOUND,
+              "offline friend revokes the synchronous route");
     social.friend_values[0].online = true;
     p2p.process({{SocialEvent::friends_changed}});
     check(!datagram_delivered(), "returning online cannot resurrect the old grant");
@@ -538,6 +557,9 @@ void p2p_advertisement_eligibility() {
     social.incoming.push_back({peer, 48, datagram});
     set_ad(""); // Withdrawal precedes an already queued carrier datagram.
     check(sent_count() == before, "withdrawal rejects an in-flight datagram before forwarding");
+    if (virtual_mode)
+        check(config.endpoints->lookup(OSW_ROUTE_OUTBOUND, remote_endpoint, physical) == OSW_NOT_FOUND,
+              "advertisement withdrawal revokes the synchronous route");
 }
 void exact_invitation_recipient() {
     Config config{"", "LocalName", "5760", "1.21", "normal"};
@@ -564,6 +586,35 @@ void exact_invitation_recipient() {
     const auto before = social.invites;
     check(send("202").http_status == 404 && social.invites == before,
           "an offline exact account cannot redirect to another user's name");
+}
+void virtual_party_isolation() {
+    Config config{"", "LocalName", "fixture", "1", "virtual-party"};
+    config.virtual_endpoints = true;
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start() && social.presence_values[self]["osw.protocol"] == "2",
+          "virtual mode advertises a distinct platform protocol");
+    create(platform, social);
+    check(social.data[lobby_id]["osw.protocol"] == "2" &&
+              Json::parse(social.data[lobby_id]["osw.document"])["protocol"] == "2",
+          "party metadata and private document both bind the address mode");
+    social.friend_values = {{peer, "Remote", true}};
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.protocol"] = "1";
+    platform.submit({2, OSW_INVITE_SEND, 30000,
+        Json{{"session_id", std::to_string(lobby_id)}, {"to", {std::to_string(peer)}}}.dump()});
+    check(single(platform).http_status == 404 && social.invites == 0,
+          "an invitation cannot target a legacy-mode friend");
+    social.presence_values[peer]["osw.protocol"] = "2";
+    auto document = Json::parse(social.data[lobby_id]["osw.document"]);
+    document["protocol"] = "1";
+    social.data[lobby_id]["osw.document"] = document.dump();
+    platform.process({{SocialEvent::invitation, 0, lobby_id, peer, true},
+                      {SocialEvent::data, 0, lobby_id, 0, true}});
+    for (const auto &event : platform.take_update().events)
+        check(event.type != OSW_INVITATION_RECEIVED && event.type != OSW_INVITATION_ACCEPTED,
+              "a matching lobby shell cannot bypass a mismatched party document");
+    check(social.joins == 0, "mixed-mode invitation never joins");
 }
 void diagnostic_friends() {
     Config config{"", "LocalName", "5760", "1.21", "normal"};
@@ -645,7 +696,9 @@ int main() {
         friend_display_names();
         friend_presence_events();
         p2p_advertisement_eligibility();
+        p2p_advertisement_eligibility(true);
         exact_invitation_recipient();
+        virtual_party_isolation();
         diagnostic_friends();
         Config config{"", "LocalName", "5760", "1.21", "normal"};
         Identity identity{true, self, "LocalName"};

@@ -12,6 +12,13 @@ the library title-agnostic and Steam symbols confined to `src/steam/`.
 Write project documentation in English and respond in the conversation language.
 Use the display name `orbiSteamworks` and repository directory `orbisteamworks`.
 
+The library is independently buildable and testable. Public C structures and the
+documented companion pipe are the integration boundary; never add sibling source,
+build-directory or runtime-layout dependencies. Generic identity, authorization
+and opaque peer transport belong here. Guest socket/ABI translation belongs in
+each host; title packet/address formats and economy rules belong in the publisher.
+An emulator or another host must be able to use the same transport API unchanged.
+
 Read README.md, docs/FEASIBILITY.md, docs/ARCHITECTURE.md and docs/SOURCES.md
 before implementation. FEASIBILITY.md revision 3.1 (2026-10-15) is the current
 decision. It replaces the shadNet-issuer design, the separate local server

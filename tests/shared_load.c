@@ -37,12 +37,16 @@ typedef struct Api {
     int32_t (*stop)(osw_context *);
     void (*destroy)(osw_context *);
     int32_t (*create_v2)(const osw_config_v2 *, osw_context **);
+    int32_t (*enable_virtual_endpoints)(osw_context *);
+    int32_t (*get_local_endpoint)(osw_context *, osw_endpoint *);
+    int32_t (*route_endpoint)(osw_context *, uint32_t, const osw_endpoint *, osw_endpoint *);
 } Api;
 
 static const char *const names[] = {"osw_create",  "osw_start",      "osw_get_identity",
                                     "osw_submit",  "osw_get_result", "osw_cancel",
                                     "osw_release", "osw_poll_event", "osw_stop",
-                                    "osw_destroy", "osw_create_v2"};
+                                    "osw_destroy", "osw_create_v2", "osw_enable_virtual_endpoints",
+                                    "osw_get_local_endpoint", "osw_route_endpoint"};
 #define NAME_COUNT (sizeof(names) / sizeof(names[0]))
 
 static int fail(const char *message) {

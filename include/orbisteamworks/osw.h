@@ -10,6 +10,12 @@ extern "C" {
 #define OSW_ABI_VERSION 1u
 #define OSW_ABI_VERSION_2 2u
 typedef struct osw_context osw_context;
+typedef struct osw_endpoint {
+    uint32_t size;
+    char address[16]; /* Canonical dotted IPv4; copied, never a borrowed pointer. */
+    uint32_t port;    /* Host byte order, 1..65535. */
+} osw_endpoint;
+enum osw_route_direction { OSW_ROUTE_OUTBOUND = 1, OSW_ROUTE_INBOUND = 2 };
 enum osw_status {
     OSW_OK = 0,
     OSW_PENDING = 1,
@@ -108,6 +114,17 @@ typedef struct osw_event {
 } osw_event;
 
 int32_t osw_create(const osw_config *config, osw_context **output);
+/* Additive ABI: explicit P2P opt-in before start; ABI 1/2 layouts stay unchanged.
+ * Endpoint structures must have size=sizeof(osw_endpoint). Route getters copy
+ * cached values under a short mutex, with no allocation or provider/network wait.
+ * OUTBOUND maps an authorized peer's canonical endpoint to a local UDP proxy;
+ * INBOUND maps that proxy source to the peer's canonical endpoint. Unknown or
+ * revoked routes return NOT_FOUND. Errors leave output unchanged. Input/output
+ * may alias. No API call may race destroy. See docs/C_API.md for lifecycle. */
+int32_t osw_enable_virtual_endpoints(osw_context *context);
+int32_t osw_get_local_endpoint(osw_context *context, osw_endpoint *output);
+int32_t osw_route_endpoint(osw_context *context, uint32_t direction,
+                         const osw_endpoint *input, osw_endpoint *output);
 int32_t osw_create_v2(const osw_config_v2 *config, osw_context **output);
 int32_t osw_start(osw_context *context);
 int32_t osw_get_identity(osw_context *context, osw_identity *output);

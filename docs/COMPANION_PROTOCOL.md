@@ -29,6 +29,26 @@ peer. Native OSW_TOKEN requests in companion mode return that same envelope.
 After all listeners and storage are ready the child sends
 `{v:1,event:"ready"}`. The parent exposes readiness via P2P `status`.
 
+When the caller explicitly enables canonical endpoints, the owner frame adds
+one `transport` object with exactly these five fields:
+`{mode:"virtual-v1",address:"198.18.x.x",port:12345,
+game_address:"127.0.0.1",game_port:12345}`. The example values are illustrative.
+`address:port` is the immutable canonical identity endpoint;
+`game_address:game_port` is the configured physical game UDP source. The child
+must validate and support this mode, then include `virtual.endpoints.v1` in its
+ready `capabilities`. Without that acknowledgement the library fails startup;
+an older child cannot silently accept a mode it does not implement. Legacy owner
+frames have no `transport` field and require no new acknowledgement. Capabilities
+are independent: a child can acknowledge both virtual endpoints and owner-name
+updates in the same array.
+
+In virtual mode `peer.endpoint` still returns only `address` and `port`, but
+these are the remote canonical endpoint. Authorization and physical proxy
+allocation still happen inside the library. The host's synchronous C route API
+translates the physical socket addresses. The child owns its title-specific
+address validation/serialization; the library never interprets that document.
+The child must preserve embedded peer identity data when using this mode.
+
 A child supporting live owner-name changes advertises
 `{v:1,event:"ready",capabilities:["owner.name.v1"]}`. Capabilities contain at
 most 16 strings of at most 64 bytes. Only after that advertisement may the
@@ -63,7 +83,7 @@ Requests complete within 25 seconds; the child should allow 30 seconds.
 | directory.update | `room_id`, `metadata` object | room record |
 | directory.members | `room_id` | current room record |
 | peer.send | `room_id`, `peer`, `payload` standard padded base64 | empty object |
-| peer.endpoint | `room_id`, `peer` | `address` IPv4 loopback text, `port` uint16 |
+| peer.endpoint | `room_id`, `peer` | `address` IPv4 text, `port` uint16; physical loopback in legacy mode, canonical in virtual mode |
 | name.resolve | `peer` | `online_id` or an explicit unavailable error |
 | name.lookup | `names` array, at most 500 online IDs | `players:[{steam_id,online_id}]`, at most 100 current in-game friends |
 | advertisement.set | `context` ASCII namespace <=32 bytes, `payload` base64 <=4096 decoded bytes; empty clears | empty object |

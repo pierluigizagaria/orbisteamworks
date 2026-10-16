@@ -18,6 +18,16 @@ identity, friends, platform invitations, global room discovery and peer messages
 The GPL host contains guest ABI translation only. No source moves from hosts or
 the PolyForm Shield publisher into this library. Steamworks remains user supplied.
 
+Each component must also build and test independently. The stable public C API
+and optional companion protocol are the integration boundary, not sibling source
+paths or a shared build tree. The library is a PSN-to-Steam provider: platform
+identity, canonical endpoint allocation, authorization, room discovery and opaque
+transport belong here. A host translates its guest structures and socket calls
+and makes OS calls. A publisher owns title-specific address serialization,
+matchmaking and local economy. No title packet/hash/MAC parser, guest syscall
+policy or native-port launch setting belongs in this library. The same endpoint
+API can be consumed unchanged by shadPS4 or another host.
+
 Each player runs one hidden publisher child. Pit Stop, coins, challenges, rewards,
 achievements, statistics, leaderboards, news and publisher files are local. The
 only peer traffic is explicitly allow-listed matchmaking room messages and race
@@ -47,10 +57,13 @@ environment. The online ID is cleaned UTF-8, 1–16 bytes without control charac
 NpAuth uses osw1; supported WebAPI routes run in-process. The host drains copied
 events on guest-visible callback paths, never from the library worker.
 
-Bind control separates the game's UDP 3074 from local NAT discovery. Race UDP
-uses per-peer loopback proxies backed by authenticated peer messages. Address
-embedding must be measured at P3; FakeIP with a socket hook is a fallback design
-only, not an assumed AppID 480 capability.
+Race UDP uses per-peer loopback proxies backed by authenticated peer messages.
+The measured P3 address-embedding failure requires the explicitly enabled
+canonical endpoint mode described in [C_API.md](C_API.md). It labels identities
+before the host exposes transport addresses, then maps peer destinations and
+received proxy sources through a small synchronous copied API. This is generic
+host socket translation, with no dependency on Steam FakeIP. Existing physical
+proxy mode remains unchanged for callers that do not opt in.
 
 Room discovery uses invisible lobbies, independent of the friends-only platform
 party. Filters include protocol (`osw/1`), title, build, realm, room protocol,
@@ -61,7 +74,9 @@ authenticated sender against the claimed PID; bound sizes, queues and rates.
 The room owner's publisher runs the existing matchmaker. A remote `Peer` sends
 pushes through the library pipe/Steam channel. A member publisher forwards only
 the agreed room tasks (145 registration/search/cancel/leave/sync/documents), and
-rewrites advertised peer addresses to local proxy endpoints. Friend 138/14
+uses the library's authorized endpoints. Legacy mode rewrites advertised peer
+addresses to local proxy endpoints; canonical mode preserves and validates the
+publisher's title address documents instead. Friend 138/14
 advertisements require a narrowly scoped read-only mechanism supported by the
 existing game evidence. No economy or statistics requests use that channel.
 

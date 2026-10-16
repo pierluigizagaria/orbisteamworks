@@ -1,5 +1,13 @@
 # Evidence and source references
 
+Canonical endpoint extension (2026-10-16): the deterministic virtual address
+labels, copied synchronous route API, capability handshake, protocol-mode
+isolation and bounded collision/revocation policy are explicit implementation
+choices (I). They are not a Sony endpoint contract or Steam FakeIP behavior.
+The library's standalone unit/Lab regressions validate those chosen contracts;
+title-specific traversal evidence belongs to the consuming publisher/host
+projects. See [C_API.md](C_API.md) and [P2P_VALIDATION.md](P2P_VALIDATION.md).
+
 Native overlay extension (2026-10-16): Valve's
 [overlay guide](https://partner.steamgames.com/doc/features/overlay) and
 [ISteamFriends reference](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog)

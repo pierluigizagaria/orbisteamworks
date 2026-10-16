@@ -1,4 +1,5 @@
 #include "core/backend.hpp"
+#include "core/endpoints.hpp"
 #include "exception_observer.hpp"
 #include <atomic>
 #include <chrono>
@@ -27,6 +28,10 @@ class Fixture final : public Backend {
         owner = std::this_thread::get_id();
         state->started = true;
         local = {true, 42, config.online_id, {}, 0};
+        if (config.virtual_endpoints) {
+            config.endpoints->initialize(virtual_endpoint(42, config));
+            config.endpoints->set_ready();
+        }
     }
     Identity identity() const override { return local; }
     void submit(Request request) override {
@@ -194,9 +199,44 @@ void backend_failure_completes_pending() {
     require(context.state->stopped && !context.state->bad_thread,
             "backend failure must stop on the owning thread");
 }
+void endpoint_c_api() {
+    Config config{"", "Player", "5760", "1.21", "fixture"};
+    config.p2p = true;
+    config.endpoints = std::make_shared<EndpointRoutes>();
+    auto state = std::make_shared<State>();
+    auto context = create_context(config, std::make_unique<Fixture>(state));
+    osw_endpoint out{sizeof(out)}, input{sizeof(input)};
+    require(osw_get_local_endpoint(context, &out) == OSW_NOT_SUPPORTED, "endpoints opt in");
+    require(osw_enable_virtual_endpoints(context) == OSW_OK &&
+                osw_get_local_endpoint(context, &out) == OSW_PENDING, "enable before startup");
+    require(osw_start(context) == OSW_OK, "endpoint context start");
+    wait([&] { return osw_get_local_endpoint(context, &out) == OSW_OK; });
+    require(osw_enable_virtual_endpoints(context) == OSW_INVALID_ARGUMENT, "no mode change after start");
+    Endpoint physical{{127, 0, 0, 1}, 32000}, remote = virtual_endpoint(43, config);
+    require(config.endpoints->install(43, remote, physical), "publish fixture route");
+    copy_endpoint(remote, input);
+    require(osw_route_endpoint(context, OSW_ROUTE_OUTBOUND, &input, &input) == OSW_OK &&
+                std::string(input.address) == "127.0.0.1" && input.port == 32000,
+            "aliased in/out copied correctly");
+    require(osw_route_endpoint(context, OSW_ROUTE_INBOUND, &input, &out) == OSW_OK &&
+                out.port == remote.port, "inverse C route");
+    const auto saved = out;
+    config.endpoints->erase(43);
+    require(osw_route_endpoint(context, OSW_ROUTE_INBOUND, &input, &out) == OSW_NOT_FOUND &&
+                std::memcmp(&saved, &out, sizeof(out)) == 0, "failure preserves caller output");
+    require(osw_route_endpoint(context, 0, &input, &out) == OSW_INVALID_ARGUMENT,
+            "unknown direction rejected");
+    input.port = 0;
+    require(osw_route_endpoint(context, OSW_ROUTE_INBOUND, &input, &out) == OSW_INVALID_ARGUMENT,
+            "invalid endpoint rejected");
+    require(osw_stop(context) == OSW_OK &&
+                osw_get_local_endpoint(context, &out) == OSW_UNAVAILABLE, "stop revokes endpoint API");
+    osw_destroy(context);
+}
 } // namespace
 int main() {
     try {
+        endpoint_c_api();
         invalid_config_is_quiet();
         backend_failure_completes_pending();
         copied_inputs_and_retained_outputs();

@@ -3,6 +3,9 @@ LIBRARY orbisteamworks
 EXPORTS
     osw_create
     osw_create_v2
+    osw_enable_virtual_endpoints
+    osw_get_local_endpoint
+    osw_route_endpoint
     osw_start
     osw_get_identity
     osw_submit

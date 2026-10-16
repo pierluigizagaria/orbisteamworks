@@ -196,3 +196,64 @@ registered lab UDP endpoint. This is a test facility, never Steam authentication
 Process liveness removes abandoned lab registrations; no menu-idle expiry exists.
 The Windows sandbox can silently drop loopback UDP: run explicitly authorized
 network acceptance tests outside that sandbox. Fixture results are not live gates.
+
+## Optional canonical UDP endpoints (additive exports, 2026-10-16)
+
+This host-independent transport extension is available to any emulator or native
+host. ABI 1/2 configuration and request/result/event layouts are unchanged. A
+caller that chooses this mode resolves all three new exports and calls
+`osw_enable_virtual_endpoints(context)` after `osw_create_v2` and before
+`osw_start`. It returns `OSW_NOT_SUPPORTED` for a non-P2P context and
+`OSW_INVALID_ARGUMENT` after startup/stop. Legacy callers need no new exports.
+
+`osw_endpoint` has exactly 24 bytes: `uint32_t size`, `char address[16]`, and
+`uint32_t port`. Initialize `size=sizeof(osw_endpoint)`. The address is bounded,
+NUL-terminated canonical dotted IPv4 with no leading zeroes; port is host-order
+1..65535. There are no borrowed pointers or release operation.
+
+| Function | Meaning |
+| --- | --- |
+| `osw_get_local_endpoint(context, output)` | Copy this identity's canonical endpoint once startup and any companion negotiation finish |
+| `osw_route_endpoint(context, OSW_ROUTE_OUTBOUND, input, output)` | Copy an authorized canonical peer endpoint's local UDP proxy destination |
+| `osw_route_endpoint(context, OSW_ROUTE_INBOUND, input, output)` | Copy a local proxy source's canonical peer endpoint |
+
+Getters return `OSW_OK` for a copied value, `OSW_PENDING` before readiness,
+`OSW_NOT_SUPPORTED` when not enabled, `OSW_NOT_FOUND` for unknown/revoked/colliding
+routes, `OSW_UNAVAILABLE` after stop/failure, or `OSW_INVALID_ARGUMENT` for
+malformed input. Errors leave the caller's output unchanged. Input and output
+may alias. Calls take only a short registry mutex, perform no heap allocation,
+and invoke no provider/network API or worker wait. They may race route updates
+and stop, but must not race destruction. A copied route is a snapshot, not a new
+authorization: the worker rechecks its existing room/friend authorization before
+forwarding. Revoked physical sockets are retained without forwarding until
+context shutdown, so stale snapshots cannot be reassigned to another peer.
+
+The library derives stable labels from the full 64-bit account and exact
+title/build/realm. It uses FNV-1a64 (offset 14695981039346656037, prime
+1099511628211), over each of `osw-virtual-endpoint-v1`, title, build and realm
+prefixed by its one-byte byte length, then the account's eight little-endian
+bytes. Let `i=hash mod (131072*64512)`: address ordinal `i/64512` selects
+`198.18.0.0/15`, and port is `1024+i mod 64512`. These are private virtual labels,
+not physical interfaces, Steam FakeIP allocations, identity proof or a promise
+of mathematical uniqueness. The registry detects a collision with self or
+another registered peer, revokes affected peer routes and keeps collision
+tombstones until context shutdown. The identity-to-endpoint scheme and range
+are library policy; hosts do not duplicate the algorithm or infer authorization
+from an address range. At most 1024 active routes/tombstones and 1024 physical
+proxy sockets over a context lifetime are permitted; exhaustion fails closed.
+No timer recycles a revoked port or clears a collision tombstone.
+
+The host keeps its actual UDP socket at configured `game_bind:game_port`, exposes
+the copied self endpoint where its guest ABI needs a local transport identity,
+and translates peer send/receive addresses through these functions. Unknown
+peer routes must fail before a host OS send; do not fall back to direct routing.
+Publisher/discovery endpoints configured by that host stay physical. Only the
+host knows its guest structures and OS calls. The library handles opaque bytes;
+it contains no title packet parser or address-document rewrite rules.
+
+Mode is immutable per context. Virtual mode uses platform/party protocol `2`,
+room protocol `2`, advertisement protocol `osw/2`, and carrier header `OSW2`;
+legacy retains `1`, `osw/1`, and `OSW1`. Title/build/realm equality is still
+mandatory. Mixed-mode friends, invitations, party documents, rooms and peer
+frames are incompatible. A configured companion must explicitly acknowledge
+`virtual.endpoints.v1` before readiness; see [COMPANION_PROTOCOL.md](COMPANION_PROTOCOL.md).

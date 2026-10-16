@@ -1,5 +1,6 @@
 #include "core/backend.hpp"
 #include "core/credential.hpp"
+#include "core/endpoints.hpp"
 #include "core/local_io.hpp"
 #include "lab/backend.hpp"
 #include "steam/backend.hpp"
@@ -178,6 +179,7 @@ struct osw_context {
             backend->stop();
         } catch (...) {
         }
+        config.endpoints->close();
         std::lock_guard lock(mutex);
         identity.signed_in = false;
         identity.account_id = 0;
@@ -191,6 +193,8 @@ struct osw_context {
 namespace osw::core {
 osw_context *create_context(Config config, std::unique_ptr<Backend> backend) {
     auto context = std::make_unique<osw_context>();
+    if (!config.endpoints)
+        config.endpoints = std::make_shared<EndpointRoutes>();
     context->config = std::move(config);
     context->backend = std::move(backend);
     return context.release();
@@ -198,6 +202,40 @@ osw_context *create_context(Config config, std::unique_ptr<Backend> backend) {
 } // namespace osw::core
 
 extern "C" {
+int32_t osw_enable_virtual_endpoints(osw_context *context) {
+    if (!context) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lifecycle(context->lifecycle);
+        std::lock_guard lock(context->mutex);
+        if (context->started || context->stopping) return OSW_INVALID_ARGUMENT;
+        if (!context->config.p2p) return OSW_NOT_SUPPORTED;
+        context->config.virtual_endpoints = true;
+        context->config.endpoints->enable();
+        return OSW_OK;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_get_local_endpoint(osw_context *context, osw_endpoint *output) {
+    if (!context || !output || output->size != sizeof(*output)) return OSW_INVALID_ARGUMENT;
+    try {
+        osw::core::Endpoint value;
+        const auto status = context->config.endpoints->local_endpoint(value);
+        if (status == OSW_OK) osw::core::copy_endpoint(value, *output);
+        return status;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_route_endpoint(osw_context *context, uint32_t direction,
+                         const osw_endpoint *input, osw_endpoint *output) {
+    if (!context || !input || !output || output->size != sizeof(*output) ||
+        (direction != OSW_ROUTE_OUTBOUND && direction != OSW_ROUTE_INBOUND))
+        return OSW_INVALID_ARGUMENT;
+    try {
+        osw::core::Endpoint from, to;
+        if (!osw::core::read_endpoint(*input, from)) return OSW_INVALID_ARGUMENT;
+        const auto status = context->config.endpoints->lookup(direction, from, to);
+        if (status == OSW_OK) osw::core::copy_endpoint(to, *output);
+        return status;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
 int32_t osw_create(const osw_config *config, osw_context **output) {
     if (!output)
         return OSW_INVALID_ARGUMENT;
@@ -467,6 +505,7 @@ int32_t osw_stop(osw_context *context) {
             context->stopping = true;
             context->wake.notify_one();
         }
+        context->config.endpoints->close();
         if (context->worker.joinable())
             context->worker.join();
         return OSW_OK;

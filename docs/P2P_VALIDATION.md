@@ -281,3 +281,40 @@ Private evidence: `out/lab-sharing-candidate-build.log` and publisher
 fixtures; no active game or Steam process was controlled or restarted, and no
 candidate was installed by these checks. Original-game race acceptance remains
 separate. Linux behavior is unchanged and was not qualified by this Windows test.
+
+## Canonical endpoint transport (2026-10-16)
+
+The next original-game Lab attempt delivered proxy UDP in both directions but
+did not establish a peer connection. Owned-game analysis in the publisher/host
+projects showed that rewriting embedded transport addresses changed the peer
+identity used by its traversal handshake. That title evidence motivates an
+optional generic library interface; no game parser or hash implementation was
+added here. The C API supplies a stable self label and authorized bidirectional
+endpoint mappings while carrying the game bytes unchanged (replacement design,
+I). The host owns socket ABI translation and the publisher owns its title's
+address validation. This extension is reusable by other hosts and does not alter
+the legacy ABI 1/2 layouts or opt-out behavior.
+
+The isolated MSVC static/shared build in `build/virtual-candidate/` passed all
+39 CTest cases in 26.57 seconds. New checks cover deterministic full-width account
+labels, namespace separation, malformed POD input, both routing directions,
+copied-output ownership/aliasing, startup/stop behavior, collision revocation and
+tombstones, fixed capacity, and concurrent lookup/revocation. Real local Lab
+sockets verify unilateral pre-party bootstrap with the source mapping published
+before first delivery, opaque binary replies, grant withdrawal, and a fresh
+authorization using a different physical port. An old companion without the
+capability acknowledgement fails closed; an acknowledging fixture becomes ready.
+Virtual/legacy friend lists, directory searches/direct joins, party invitations
+and documents, private advertisements, and carrier headers are isolated. The
+carrier regression rejects the other mode even with a cached authorized friend.
+Shared-library loading verifies all 14 C exports and the unchanged configuration
+layouts; the new endpoint structure is checked as 24 bytes in a C translation unit.
+
+Private build evidence: `out/virtual-candidate-final-build.log`.
+Candidate DLL SHA-256:
+`bb6bb92567f6b14c7ebf07a7b3fbec159c776132320b02d60df72e6f54785bf7`.
+No live Steam process, game UI or installed executable was changed by these
+tests. The publisher's actual two-child integration is an optional external
+consumer of the public API; its final matching-build evidence is recorded
+separately. Original-game racing, Linux runtime behavior and two-account Steam
+transport remain separate acceptance gates.
