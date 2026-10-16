@@ -188,6 +188,9 @@ int main(int argc, char **argv) {
                 check(local.call_raw(invalid)["status"] != 0, "invalid JSON rejected");
             check(local.call({{"op", "status"}})["result"]["ready"] == true,
                   "invalid requests preserve context");
+            for (const auto action : {"status", "friends", "invite"})
+                check(local.call({{"action", action}}, OSW_OVERLAY)["status"] == OSW_NOT_SUPPORTED,
+                      "lab backend never fabricates native overlay support");
             osw::core::UdpSocket game("127.0.0.21", 3074);
             osw::core::Config config;
             config.companion_path = exe;

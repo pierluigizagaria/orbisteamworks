@@ -188,6 +188,9 @@ struct Platform::Impl {
         }
         std::erase_if(known_friends,
                       [&](const auto &item) { return !remaining.contains(item.first); });
+        for (auto &[key, invitation] : invitations)
+            if (auto friend_ = known_friends.find(invitation.sender); friend_ != known_friends.end())
+                invitation.name = friend_->second.second;
     }
     Json user(Id id, const std::string &name) {
         return Json{{"accountId", std::to_string(id)}, {"onlineId", name}};
@@ -277,6 +280,73 @@ struct Platform::Impl {
         return joined.contains(lobby) &&
                valid_online_id(social.member_data(lobby, identity.account_id, "osw.member"));
     }
+    bool overlay_party(Id lobby) {
+        if (!compatible(lobby) || !committed(lobby) ||
+            !social.lobby_data(lobby, "osw_room").empty()) return false;
+        const auto users = social.members(lobby);
+        return std::find(users.begin(), users.end(), identity.account_id) != users.end();
+    }
+    void overlay(const Request &request, const Json &meta) {
+        const auto id = request.id;
+        const auto action = text(meta, "action");
+        if (!request.body.empty() || !meta.contains("action") || !meta["action"].is_string() ||
+            (meta.contains("session_id") &&
+             (action != "invite" || !meta["session_id"].is_string()))) {
+            result(id, OSW_INVALID_ARGUMENT);
+            return;
+        }
+        for (auto it = meta.begin(); it != meta.end(); ++it)
+            if (it.key() != "action" && it.key() != "session_id") {
+                result(id, OSW_INVALID_ARGUMENT);
+                return;
+            }
+        if (action != "status" && action != "friends" && action != "invite") {
+            result(id, OSW_NOT_SUPPORTED);
+            return;
+        }
+        const auto state = social.overlay_status();
+        if (!state.supported) {
+            result(id, OSW_NOT_SUPPORTED);
+            return;
+        }
+        if (action == "status") {
+            json(id, 200, Json{{"available", state.available}, {"active", state.active}});
+            return;
+        }
+        if (!state.available) {
+            result(id, OSW_UNAVAILABLE);
+            return;
+        }
+        if (action == "friends") {
+            const bool issued = social.overlay_friends();
+            result(id, issued ? OSW_OK : OSW_UNAVAILABLE, issued ? 204 : 0);
+            return;
+        }
+        Id selected = 0;
+        if (meta.contains("session_id")) {
+            const auto value = parse_decimal_id(text(meta, "session_id"));
+            if (!value) {
+                result(id, OSW_INVALID_ARGUMENT);
+                return;
+            }
+            if (overlay_party(*value)) selected = *value;
+        } else {
+            for (const auto lobby : joined) {
+                if (!overlay_party(lobby)) continue;
+                if (selected) {
+                    result(id, OSW_LIMIT);
+                    return;
+                }
+                selected = lobby;
+            }
+        }
+        if (!selected) {
+            result(id, OSW_NOT_FOUND);
+            return;
+        }
+        const bool issued = social.overlay_invite(selected);
+        result(id, issued ? OSW_OK : OSW_UNAVAILABLE, issued ? 204 : 0);
+    }
     bool alive(Id lobby, const Json &document) {
         if (!joined.contains(lobby))
             return true;
@@ -321,6 +391,9 @@ struct Platform::Impl {
             if (!previous.contains(id))
                 update.events.push_back(
                     {OSW_SESSION_CHANGED, 0, id, std::to_string(lobby), {}, name, 1});
+            else if (previous.at(id) != name)
+                update.events.push_back(
+                    {OSW_SESSION_CHANGED, 0, id, std::to_string(lobby), {}, name, 3});
         for (const auto &[id, name] : previous)
             if (!current.contains(id))
                 update.events.push_back(
@@ -832,6 +905,21 @@ bool Platform::start() {
     p->refresh_friends();
     return true;
 }
+bool Platform::update_name(const std::string &name) {
+    if (p->stopped || !valid_online_id(name))
+        return false;
+    if (p->identity.online_id == name)
+        return true;
+    if (!p->social.set_presence("osw.name", name))
+        return false;
+    p->identity.online_id = name;
+    for (auto lobby : p->joined)
+        if (p->committed(lobby)) {
+            p->social.set_member_data(lobby, "osw.member", name);
+            p->session_events(lobby);
+        }
+    return true;
+}
 void Platform::submit(Request request) {
     const auto id = request.id;
     if (p->stopped) {
@@ -849,6 +937,9 @@ void Platform::submit(Request request) {
             return;
         }
         switch (request.operation) {
+        case OSW_OVERLAY:
+            p->overlay(request, meta);
+            break;
         case OSW_WEBAPI:
             p->webapi(std::move(request), std::move(meta));
             break;
@@ -921,6 +1012,12 @@ void Platform::cancel(Id request) {
 }
 void Platform::process(const std::vector<SocialEvent> &events) {
     for (const auto &event : events) {
+        if (event.kind == SocialEvent::overlay_changed && (event.detail == 0 || event.detail == 1)) {
+            Event value{OSW_OVERLAY_CHANGED};
+            value.change_kind = static_cast<std::uint32_t>(event.detail);
+            p->update.events.push_back(std::move(value));
+            continue;
+        }
         if (event.kind == SocialEvent::created || event.kind == SocialEvent::entered) {
             auto it = p->calls.find(event.call);
             if (it == p->calls.end())

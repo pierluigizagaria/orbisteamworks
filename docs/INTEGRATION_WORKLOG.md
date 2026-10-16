@@ -472,3 +472,87 @@ log lines 145–154; updated
 observed contents. The preceding record is retained as
 `game-acceptance-before-reentry.json`. No binary or configuration changed for
 this acceptance update.
+
+## Native Steam overlay request contract (2026-10-16)
+
+Implemented additive operation `OSW_OVERLAY` (9) and event
+`OSW_OVERLAY_CHANGED` (8), preserving all public structure layouts. The Steam
+worker resolves optional Friends/invitation panel calls and the Utils overlay
+availability query. Core code allows invitation panels only for a compatible,
+committed party whose actual provider members include the local user. Invisible
+room directories, foreign namespaces and ambiguous implicit selection are
+rejected. Lab providers explicitly report unsupported. HTTP 204 records only
+dispatch; it is never evidence that a user sent or accepted an invitation.
+
+The separate `build/steam-overlay/` Release build produced static and shared
+libraries successfully with MSVC 19.50. Its initial 35-test suite passed 34
+tests inside the sandbox, including the three new overlay fixtures. The one
+loopback UDP cross-process test failed at proxy receive in that sandbox and
+passed when rerun on the authorized host (15.87 seconds). Fixtures cover the
+copied worker request path, unavailable/missing-interface behavior, native call
+arguments, callback lifetime/size/boolean/AppID checks, active-state events and
+party namespace/membership gates. A subsequent small change adds explicit lab
+overlay rejection assertions to the cross-process fixture and stops optional
+resolution after a required social export has failed; final integration checks
+are recorded with the combined overlay/persona candidate.
+
+A private compile-time audit against the user's SDK 1.65 headers verified the
+independent callback-331 declaration: size 12, alignment 4 and field offsets
+0/1/4/8. The audit compiled without running Steam. Provider SDK files remain
+under ignored `out/` and are not distributed. Public documentation references
+and implementation-choice classification are in [SOURCES.md](SOURCES.md).
+
+No live Steam client, game window or native overlay was exercised for this
+library change. No candidate DLL was installed. Rendering, native overlay
+availability after early host initialization and real cross-account invitation
+delivery remain live acceptance gates; these offline results do not satisfy
+them.
+
+## Combined overlay and live persona candidate (2026-10-16)
+
+The worker now observes sanitized Steam persona changes when no online-ID
+override is configured. It updates the copied C API identity, rich presence,
+P2P self-name and already committed party member labels. A name-only member
+event uses change kind 3; provisional membership remains provisional. Cached
+invitation sender labels follow the current compatible friend record.
+
+The optional local child contract is explicitly negotiated as
+`owner.name.v1`; see [COMPANION_PROTOCOL.md](COMPANION_PROTOCOL.md). The private
+name update never rotates or retransmits the bootstrap capability. A legacy
+child freezes the context's initial label and reports lack of support through
+P2P status. The matching publisher updates admission, persisted names and copied
+presence records while retaining PID, subject, database namespace and existing
+ticket/session objects. Late tickets cannot restore an old display label.
+
+An isolated MSVC Release build in `build/rename-candidate/` produced both static
+and shared libraries from base `3b3bfd49ddcbe4aba4f96f8e83a08c7cd07d8e2b` plus
+the uncommitted overlay/persona changes. All 36 CTest cases passed on the
+authorized host (22.61 seconds), including the final overlay error guard and
+explicit lab rejection checks. The initial sandbox run passed 35 cases; its
+UDP fixture received no proxy datagrams and passed in the host rerun. No test
+was reclassified as Steam or game acceptance.
+
+The synthetic Steam DLL/child fixture covers persona sanitization, copied
+identity-change events, stable account/capability, P2P name resolution,
+capability visibility, modern/legacy child negotiation and a fixed configured
+name. The platform fixture verifies that a prepared member is not committed
+by a rename and that a committed rename emits update rather than join/leave.
+The final test-only additions were rebuilt and passed separately (2.63 seconds).
+Publisher tests additionally cover rename before the first authentication,
+malformed/foreign/unnegotiated pipe messages and concurrent admission, late
+ticket registration, name persistence and retained connections. Its complete
+Go test suite, `go vet ./...`, candidate build and targeted race detector for
+local admission, companion and presence passed. Windows ThreadSanitizer could
+not allocate its arena inside the sandbox; the same tests passed on the host.
+
+Candidate SHA-256 pins (not installed):
+
+- `build/rename-candidate/orbisteamworks.dll`:
+  `508a135f34052108481c7427a3e8633b7d7b9a48794a071feef41ad2243e3786`.
+- Publisher `bin/demonware-server-rename-candidate.exe`:
+  `0fc70159dad030a978f7126e25368fec4e911cc8d418980f7268fe290a027369`.
+
+These are implementation fixtures (I). No live Steam persona was changed,
+no game UI was driven, no installed binary was replaced and no live rename or
+cross-account overlay acceptance is claimed. Existing opaque game payloads
+are not rewritten to guess embedded names. Linux runtime remains unqualified.

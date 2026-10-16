@@ -77,6 +77,10 @@ struct PersonaChanged {
     Id user;
     std::int32_t flags;
 };
+struct OverlayActivated {
+    std::uint8_t active, user_initiated;
+    std::uint32_t app, process;
+};
 #pragma pack(pop)
 // CSteamID itself has alignment 1 in the SDK. Consequently this callback has
 // alignment 4 and owner offset 12 even on Windows (not the usual uint64 ABI).
@@ -106,6 +110,8 @@ struct LobbyJoinRequested {
 #pragma pack(pop)
 static_assert(sizeof(void *) == 8 && sizeof(bool) == 1);
 static_assert(sizeof(TicketResponse) == 8 && sizeof(ConnectFailure) == 8);
+static_assert(sizeof(OverlayActivated) == 12 && offsetof(OverlayActivated, app) == 4 &&
+              offsetof(OverlayActivated, process) == 8);
 static_assert(sizeof(Identity) == 136 && alignof(Identity) == 1);
 #pragma pack(push, 8)
 struct NetworkingMessage {
@@ -138,6 +144,7 @@ inline constexpr int lobby_data = 505, lobby_chat = 506, lobby_invite = 503;
 inline constexpr int lobby_message = 507;
 inline constexpr int lobby_list = 510, networking_session_request = 1251;
 inline constexpr int persona_changed = 304, lobby_join_requested = 333, rich_presence_changed = 336;
+inline constexpr int overlay_activated = 331;
 inline constexpr std::uint16_t query_port_shared = 0xffff;
 
 // All exports use the platform C calling convention (cdecl on Windows x64).
@@ -165,6 +172,7 @@ using FriendByIndex = Id (*)(void *, int, int);
 using FriendState = int (*)(void *, Id);
 using FriendName = const char *(*)(void *, Id);
 using PersonaName = const char *(*)(void *);
+using OverlayEnabled = bool (*)(void *);
 using GetPresence = const char *(*)(void *, Id, const char *);
 using SetPresence = bool (*)(void *, const char *, const char *);
 using RequestPresence = void (*)(void *, Id);

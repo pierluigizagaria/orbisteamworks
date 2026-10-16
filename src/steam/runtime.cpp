@@ -84,6 +84,11 @@ struct Runtime::Impl {
     flat::FriendState friend_state = nullptr;
     flat::FriendName friend_name = nullptr;
     flat::PersonaName persona_name = nullptr;
+    void *overlay_utils = nullptr;
+    flat::OverlayEnabled overlay_enabled = nullptr;
+    flat::SetString activate_overlay = nullptr;
+    flat::LobbyVoid activate_invite = nullptr;
+    bool overlay_active = false;
     flat::GetPresence get_presence = nullptr;
     flat::SetPresence set_presence = nullptr;
     flat::RequestPresence request_presence = nullptr;
@@ -139,6 +144,13 @@ struct Runtime::Impl {
         if (!address)
             throw *error;
         return address;
+    }
+    template <class T> T optional_symbol(const char *name) {
+#ifdef _WIN32
+        return reinterpret_cast<T>(GetProcAddress(module, name));
+#else
+        return reinterpret_cast<T>(dlsym(module, name));
+#endif
     }
     void require(Mode expected) const {
         if (mode != expected || !api)
@@ -363,7 +375,30 @@ bool Runtime::start_social() {
     p->read_message =
         p->find_symbol<flat::LobbyRead>("SteamAPI_ISteamMatchmaking_GetLobbyChatEntry");
     p->set_type = p->find_symbol<flat::LobbyLimit>("SteamAPI_ISteamMatchmaking_SetLobbyType");
+    if (p->error) return false;
+    // Optional capability: older runtimes must retain their existing platform services.
+    const auto utils = p->optional_symbol<flat::GetInterface>("SteamAPI_SteamUtils_v011");
+    p->overlay_enabled = p->optional_symbol<flat::OverlayEnabled>("SteamAPI_ISteamUtils_IsOverlayEnabled");
+    p->activate_overlay = p->optional_symbol<flat::SetString>("SteamAPI_ISteamFriends_ActivateGameOverlay");
+    p->activate_invite = p->optional_symbol<flat::LobbyVoid>("SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog");
+    if (utils && p->overlay_enabled && p->activate_overlay && p->activate_invite)
+        p->overlay_utils = utils();
     return !p->error;
+}
+
+core::OverlayState Runtime::overlay_status() {
+    if (p->error || !p->friends_api || !p->overlay_utils) return {};
+    return {true, p->overlay_enabled(p->overlay_utils), p->overlay_active};
+}
+bool Runtime::overlay_friends() {
+    if (!overlay_status().available) return false;
+    p->activate_overlay(p->friends_api, "friends");
+    return true;
+}
+bool Runtime::overlay_invite(std::uint64_t lobby) {
+    if (!lobby || !overlay_status().available) return false;
+    p->activate_invite(p->friends_api, lobby);
+    return true;
 }
 
 std::vector<core::Friend> Runtime::friends() {
@@ -677,6 +712,20 @@ std::vector<Event> Runtime::try_poll() {
             ~Release() { p->free_callback(p->pipe); }
         } release{p.get()};
         switch (cb.kind) {
+        case flat::overlay_activated: {
+            if (!p->friends_api) break;
+            const auto value = payload<flat::OverlayActivated>(cb, p->error);
+            if (p->error) return {};
+            if (value.active > 1 || value.user_initiated > 1) {
+                p->error.emplace(ErrorCode::callback_abi, "Invalid overlay callback state");
+                return {};
+            }
+            if (value.app != 480) break;
+            p->overlay_active = value.active != 0;
+            p->social_events.push_back({core::SocialEvent::overlay_changed, 0, 0, 0, true,
+                                       static_cast<int>(value.active)});
+            break;
+        }
         case flat::api_call_completed: {
             if (!p->call_result)
                 break;

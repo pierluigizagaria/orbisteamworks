@@ -11,6 +11,8 @@ class P2P {
     void submit(Request);
     void process(const std::vector<SocialEvent> &);
     void set_party(Party);
+    bool supports_name_updates() const;
+    bool update_name(const std::string &name);
     void cancel(std::uint64_t);
     Update poll();
     bool failed() const;

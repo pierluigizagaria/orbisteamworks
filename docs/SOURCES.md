@@ -1,5 +1,24 @@
 # Evidence and source references
 
+Native overlay extension (2026-10-16): Valve's
+[overlay guide](https://partner.steamgames.com/doc/features/overlay) and
+[ISteamFriends reference](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog)
+document initialization before the graphics device, availability checks,
+active-state callbacks and the void invitation-panel call (P). The locally
+supplied SDK 1.65 headers were consulted for `SteamUtils_v011`, the two
+`ISteamFriends` activation entry points and callback 331, `GameOverlayActivated_t`
+(P). A private compile-time comparison against those headers passed: payload
+size 12, alignment 4, active/user-initiated fields at offsets 0/1 and AppID/PID
+at offsets 4/8. The loader validates callback size and boolean fields and ignores
+callbacks for another AppID. No SDK files are copied into the source tree.
+
+The additive `OSW_OVERLAY` schema, committed-party requirement, unambiguous
+implicit party selection and HTTP 204 dispatch semantics are chosen library
+behavior (I), not a recovered PS4 dialog contract. Offline fixtures exercise
+optional exports, worker request dispatch, callback validation and namespace/
+membership gates. These tests do not establish live overlay rendering or
+invitation delivery; see [C_API.md](C_API.md).
+
 Native P2P update (2026-10-16): `online` at
 `b1b4bf9647132822147e76aeec47390c6cb157bf` is now the selected native base;
 the historical main-baseline/reference-only labels below are superseded by

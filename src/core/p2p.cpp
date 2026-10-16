@@ -35,7 +35,7 @@ struct P2P::Impl {
     Social &social;
     Child child;
     std::string token;
-    bool ready = false, broken = false;
+    bool ready = false, broken = false, owner_name_updates = false;
     std::uint64_t proxy_received = 0, network_sent = 0, network_received = 0, proxy_sent = 0,
                   proxy_rejected = 0;
     Clock::time_point start = Clock::now();
@@ -281,6 +281,7 @@ struct P2P::Impl {
             if (op == "status") {
                 reply(command, request, true,
                       {{"ready", ready},
+                       {"owner_name_updates", config.companion_path.empty() || owner_name_updates},
                        {"backend", config.backend ? "lab" : "steam"},
                        {"proxy_received", proxy_received},
                        {"network_sent", network_sent},
@@ -717,6 +718,20 @@ struct P2P::Impl {
                     break;
                 }
                 if (command.value("event", std::string{}) == "ready") {
+                    if (ready) {
+                        broken = true;
+                        break;
+                    }
+                    const auto capabilities = command.value("capabilities", Json::array());
+                    if (!capabilities.is_array() || capabilities.size() > 16 ||
+                        !std::all_of(capabilities.begin(), capabilities.end(), [](const Json &entry) {
+                            return entry.is_string() && entry.get_ref<const std::string &>().size() <= 64;
+                        })) {
+                        broken = true;
+                        break;
+                    }
+                    owner_name_updates = std::find(capabilities.begin(), capabilities.end(),
+                                                   Json("owner.name.v1")) != capabilities.end();
                     ready = true;
                     continue;
                 }
@@ -886,6 +901,24 @@ void P2P::set_party(Party party) {
     if (party.lobby != p->party.lobby || party.owner != p->party.owner)
         p->suppressed_selection = 0;
     p->party = std::move(party);
+}
+bool P2P::supports_name_updates() const {
+    return p->config.companion_path.empty() || (p->ready && p->owner_name_updates);
+}
+bool P2P::update_name(const std::string &name) {
+    if (!valid_online_id(name) || !supports_name_updates())
+        return false;
+    if (p->identity.online_id == name)
+        return true;
+    if (!p->config.companion_path.empty() &&
+        !p->child.send(Json{{"v", 1}, {"event", "owner.name"},
+                            {"steam_id", idstr(p->identity.account_id)}, {"online_id", name}}.dump())) {
+        p->broken = true;
+        return false;
+    }
+    // The token remains the exact bootstrap capability, including its initial label.
+    p->identity.online_id = name;
+    return true;
 }
 void P2P::cancel(std::uint64_t request) {
     for (auto it = p->pending.begin(); it != p->pending.end();)

@@ -200,6 +200,13 @@ The library does not change for this host.
 
 ## Acceptance discipline
 
+The optional provider overlay uses `OSW_OVERLAY` requests and copied
+`OSW_OVERLAY_CHANGED` events. Core code validates the generic party namespace
+and committed local membership; only the Steam adapter resolves native overlay
+entry points and handles their callbacks on the worker. Lab providers report
+unsupported. Panel dispatch and invitation acceptance are separate results;
+the exact request contract is in [C_API.md](C_API.md).
+
 - Offline fixture results do not count as live Steam or in-game results.
 - Each live gate records the library, shadPS4 fork, Demonware and Steam API
   library versions, together with human observations.

@@ -28,6 +28,16 @@ struct Fixture : Social {
     std::vector<std::pair<Id, std::string>> messages;
     int joins = 0, invites = 0, writes = 0, fail_write = -1;
     std::string fail_presence;
+    OverlayState overlay_state{};
+    int overlay_opens = 0;
+    Id overlay_lobby = 0;
+    OverlayState overlay_status() override { return overlay_state; }
+    bool overlay_friends() override { ++overlay_opens; return overlay_state.available; }
+    bool overlay_invite(Id lobby) override {
+        ++overlay_opens;
+        overlay_lobby = lobby;
+        return overlay_state.available;
+    }
     Id call = 0;
     std::vector<Friend> friends() override { return friend_values; }
     std::string presence(Id id, const std::string &key) override {
@@ -262,6 +272,69 @@ Result transfer(Platform &owner, Fixture &source, Platform &guest, Fixture &dest
     }
     throw std::runtime_error("payload did not complete within fixture rounds");
 }
+void overlay_contracts() {
+    Config config{"", "LocalName", "5760", "1.21", "overlay-fixture"};
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start(), "overlay fixture starts");
+    Id next = 100;
+    const auto run = [&](Json meta, std::vector<std::uint8_t> bytes = {}) {
+        platform.submit({next++, OSW_OVERLAY, 30000, meta.dump(), std::move(bytes)});
+        return single(platform);
+    };
+    check(run({{"action", "status"}}).status == OSW_NOT_SUPPORTED, "non-native overlay is unsupported");
+    social.overlay_state = {true, false, false};
+    auto result = run({{"action", "status"}});
+    check(result.http_status == 200 && Json::parse(body(result)) ==
+          Json{{"available", false}, {"active", false}}, "status does not invent availability");
+    check(run({{"action", "friends"}}).status == OSW_UNAVAILABLE && !social.overlay_opens,
+          "disabled overlay is not dispatched");
+    social.overlay_state.available = true;
+    check(run({{"action", "friends"}}).http_status == 204 && social.overlay_opens == 1,
+          "friend overlay dispatch returns no invitation confirmation");
+    check(run({{"action", "invite"}}).status == OSW_NOT_FOUND, "missing party refused");
+    create(platform, social);
+    const auto id = std::to_string(lobby_id);
+    check(run({{"action", "invite"}}).http_status == 204 && social.overlay_lobby == lobby_id,
+          "unique committed party selected");
+    social.member_values[lobby_id][self].erase("osw.member");
+    check(run({{"action", "invite"}, {"session_id", id}}).status == OSW_NOT_FOUND,
+          "provisional Steam membership is not an invite target");
+    social.member_values[lobby_id][self]["osw.member"] = "LocalName";
+    social.users[lobby_id] = {peer};
+    check(run({{"action", "invite"}, {"session_id", id}}).status == OSW_NOT_FOUND,
+          "stale committed data without actual local membership refused");
+    social.users[lobby_id] = {self};
+    social.data[lobby_id]["osw_room"] = "osw/1";
+    check(run({{"action", "invite"}, {"session_id", id}}).status == OSW_NOT_FOUND,
+          "directory room never offered as party");
+    social.data[lobby_id].erase("osw_room");
+    for (const auto key : {"osw.protocol", "osw.title", "osw.build", "osw.realm"}) {
+        const auto saved = social.data[lobby_id][key];
+        social.data[lobby_id][key] = "foreign";
+        check(run({{"action", "invite"}, {"session_id", id}}).status == OSW_NOT_FOUND,
+              "foreign namespace field refused");
+        social.data[lobby_id][key] = saved;
+    }
+    create(platform, social, 2, lobby_id + 1);
+    check(run({{"action", "invite"}}).status == OSW_LIMIT, "ambiguous committed parties refused");
+    check(run({{"action", "invite"}, {"session_id", id}}).http_status == 204,
+          "explicit compatible party remains selectable");
+    for (const auto &meta : {Json{{"action", "invite"}, {"session_id", 12}},
+                            Json{{"action", "invite"}, {"session_id", ""}},
+                            Json{{"action", "status"}, {"session_id", id}},
+                            Json{{"action", "friends"}, {"url", "unrequested"}},
+                            Json{{"action", 7}}})
+        check(run(meta).status == OSW_INVALID_ARGUMENT, "malformed overlay schema refused");
+    check(run({{"action", "friends"}}, {1}).status == OSW_INVALID_ARGUMENT, "overlay body refused");
+    check(run({{"action", "arbitrary"}}).status == OSW_NOT_SUPPORTED, "unlisted overlay action refused");
+    platform.process({{SocialEvent::overlay_changed, 0, 0, 0, true, 1},
+                      {SocialEvent::overlay_changed, 0, 0, 0, true, 0}});
+    const auto events = platform.take_update().events;
+    check(events.size() == 2 && events[0].type == OSW_OVERLAY_CHANGED &&
+          events[0].change_kind == 1 && events[1].change_kind == 0,
+          "copied overlay lifecycle events contain no fabricated invitation result");
+}
 void friend_display_names() {
     Config config{"", "LocalName", "5760", "1.21", "normal"};
     Fixture social;
@@ -406,6 +479,7 @@ void diagnostic_friends() {
 }
 int main() {
     try {
+        overlay_contracts();
         p2p_follow_lifecycle();
         friend_display_names();
         diagnostic_friends();
@@ -626,6 +700,12 @@ int main() {
               "two-platform fixture transfers complete image");
         check(guest_social.member_values[lobby_id][peer]["osw.member"].empty(),
               "payload preparation does not commit guest");
+        check(guest_platform.update_name("Provisional") &&
+                  guest_social.presence_values[peer]["osw.name"] == "Provisional" &&
+                  guest_social.member_values[lobby_id][peer]["osw.member"].empty() &&
+                  guest_platform.party().members.empty(),
+              "rename during prepared read never commits provisional membership");
+        check(guest_platform.update_name("RemoteName"), "provisional name can change again");
         guest_platform.cancel(50);
         check(guest_social.left.size() == 1 && guest_social.left.back() == lobby_id,
               "late canceled read leaves provisional lobby");
@@ -666,6 +746,21 @@ int main() {
                                      event.account_id == peer;
                           }),
               "owner receives committed guest membership event");
+        check(guest_platform.update_name("RenamedGuest"), "committed guest rename");
+        owner_social.member_values[lobby_id] = guest_social.member_values[lobby_id];
+        owner_platform.process({{SocialEvent::data, 0, lobby_id, peer, true}});
+        notifications = owner_platform.take_update();
+        check(std::any_of(notifications.events.begin(), notifications.events.end(),
+                          [](const Event &event) { return event.type == OSW_SESSION_CHANGED &&
+                              event.change_kind == 3 && event.account_id == peer &&
+                              event.online_id == "RenamedGuest"; }) &&
+                  std::none_of(notifications.events.begin(), notifications.events.end(),
+                          [](const Event &event) { return event.type == OSW_SESSION_CHANGED &&
+                              (event.change_kind == 1 || event.change_kind == 2); }),
+              "peer rename emits update without fake join or leave");
+        check(!guest_platform.update_name("bad\nname") &&
+                  guest_social.member_values[lobby_id][peer]["osw.member"] == "RenamedGuest",
+              "invalid name preserves committed identity");
         guest_platform.stop();
         owner_platform.stop();
         std::cout << "platform contracts passed\n";

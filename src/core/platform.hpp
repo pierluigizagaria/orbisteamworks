@@ -9,6 +9,7 @@ class Platform {
     Platform(Config config, Identity identity, Social &social);
     ~Platform();
     bool start();
+    bool update_name(const std::string &name);
     void submit(Request request);
     void cancel(std::uint64_t request);
     void process(const std::vector<SocialEvent> &events);

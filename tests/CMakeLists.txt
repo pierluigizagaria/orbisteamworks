@@ -30,6 +30,18 @@ target_link_libraries(osw-steam-p2p-tests PRIVATE orbisteamworks)
 target_include_directories(osw-steam-p2p-tests PRIVATE ../src)
 add_test(NAME steam-p2p-contracts COMMAND ${CMAKE_COMMAND} -E env
   OSW_FIXTURE_SCENARIO=p2p $<TARGET_FILE:osw-steam-p2p-tests> $<TARGET_FILE:osw-test-api>)
+add_executable(osw-steam-overlay-tests ../src/steam/testing/overlay_tests.cpp)
+target_link_libraries(osw-steam-overlay-tests PRIVATE orbisteamworks osw-test-api)
+target_include_directories(osw-steam-overlay-tests PRIVATE ../src)
+foreach(scenario overlay overlay-disabled overlay-unsupported)
+  add_test(NAME steam-${scenario}-contracts COMMAND ${CMAKE_COMMAND} -E env
+    OSW_FIXTURE_SCENARIO=${scenario} $<TARGET_FILE:osw-steam-overlay-tests>
+    $<TARGET_FILE:osw-test-api> ${scenario})
+endforeach()
+add_executable(osw-steam-rename-tests ../src/steam/testing/rename_tests.cpp)
+target_link_libraries(osw-steam-rename-tests PRIVATE orbisteamworks osw-test-api nlohmann_json::nlohmann_json)
+add_test(NAME steam-rename-contracts COMMAND ${CMAKE_COMMAND} -E env
+  OSW_FIXTURE_SCENARIO=p2p $<TARGET_FILE:osw-steam-rename-tests> $<TARGET_FILE:osw-test-api>)
 function(failure_case name program library scenario code message)
   add_test(NAME ${name} COMMAND ${CMAKE_COMMAND}
     -DPROGRAM=$<TARGET_FILE:${program}> -DLIBRARY=${library}

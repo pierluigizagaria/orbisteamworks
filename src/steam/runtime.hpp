@@ -77,6 +77,9 @@ class Runtime : public core::Social {
     bool set_limit(std::uint64_t lobby, int limit) override;
     bool set_friends_visible(std::uint64_t lobby, bool visible) override;
     bool send_message(std::uint64_t lobby, const std::string &bytes) override;
+    core::OverlayState overlay_status() override;
+    bool overlay_friends() override;
+    bool overlay_invite(std::uint64_t lobby) override;
     bool logged_on() const;
     std::uint64_t id() const;
     Ticket request_ticket(std::uint64_t bound_server = 0);

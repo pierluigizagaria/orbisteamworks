@@ -30,7 +30,8 @@ enum osw_operation {
     OSW_INVITE_ACCEPT = 5,
     OSW_INVITE_DECLINE = 6,
     OSW_RESOLVE_NAME = 7,
-    OSW_P2P = 8
+    OSW_P2P = 8,
+    OSW_OVERLAY = 9
 };
 enum osw_event_type {
     OSW_IDENTITY_CHANGED = 1,
@@ -39,7 +40,8 @@ enum osw_event_type {
     OSW_INVITATION_RECEIVED = 4,
     OSW_INVITATION_ACCEPTED = 5,
     OSW_SESSION_CHANGED = 6,
-    OSW_RESYNC = 7
+    OSW_RESYNC = 7,
+    OSW_OVERLAY_CHANGED = 8
 };
 
 typedef struct osw_config {
@@ -100,7 +102,7 @@ typedef struct osw_event {
     uint32_t size, type;
     uint64_t request_id, account_id;
     char session_id[32], invitation_id[65], online_id[17];
-    uint32_t change_kind; /* Session: 1 committed member joined, 2 left, 3 metadata. */
+    uint32_t change_kind; /* Session: 1 joined, 2 left, 3 metadata. Overlay: 0 closed, 1 active. */
 } osw_event;
 
 int32_t osw_create(const osw_config *config, osw_context **output);

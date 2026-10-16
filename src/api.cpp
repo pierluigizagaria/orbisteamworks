@@ -146,6 +146,7 @@ struct osw_context {
                         event(std::move(value));
                     if (current_identity.signed_in != identity.signed_in ||
                         current_identity.account_id != identity.account_id ||
+                        current_identity.online_id != identity.online_id ||
                         current_identity.reason_code != identity.reason_code) {
                         identity = std::move(current_identity);
                         event({OSW_IDENTITY_CHANGED});
@@ -325,7 +326,7 @@ int32_t osw_get_identity(osw_context *context, osw_identity *output) {
 }
 int32_t osw_submit(osw_context *context, const osw_request *request, uint64_t *request_id) {
     if (!context || !request || !request_id || request->size != sizeof(*request) ||
-        request->operation < OSW_TOKEN || request->operation > OSW_P2P || request->timeout_ms < 1 ||
+        request->operation < OSW_TOKEN || request->operation > OSW_OVERLAY || request->timeout_ms < 1 ||
         request->timeout_ms > 60000 || request->metadata_size > 65536 ||
         request->body_size > 1024 * 1024 || (request->metadata_size && !request->metadata) ||
         (request->body_size && !request->body))

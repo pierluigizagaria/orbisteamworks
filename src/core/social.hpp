@@ -20,7 +20,8 @@ struct SocialEvent {
         join_requested,
         friends_changed,
         message,
-        listed
+        listed,
+        overlay_changed
     } kind;
     std::uint64_t call = 0, lobby = 0, user = 0;
     bool success = false;
@@ -36,6 +37,9 @@ struct PeerMessage {
 struct Party {
     std::uint64_t lobby = 0, owner = 0;
     std::vector<std::uint64_t> members;
+};
+struct OverlayState {
+    bool supported = false, available = false, active = false;
 };
 class Social {
   public:
@@ -69,5 +73,8 @@ class Social {
     virtual bool send_peer(std::uint64_t, int, const std::string &) { return false; }
     virtual std::vector<PeerMessage> take_peer_messages() { return {}; }
     virtual void allow_peers(const std::vector<std::uint64_t> &) {}
+    virtual OverlayState overlay_status() { return {}; }
+    virtual bool overlay_friends() { return false; }
+    virtual bool overlay_invite(std::uint64_t) { return false; }
 };
 } // namespace osw::core

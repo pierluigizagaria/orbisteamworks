@@ -99,6 +99,46 @@ default off when the library is included with `add_subdirectory`.
 `liborbisteamworks.so`, which exports only the functions above for hosts that
 load the library at runtime; see PLUGIN_DESIGN.md.
 
+## Native provider overlay (additive operation, 2026-10-16)
+
+`OSW_OVERLAY` (9) uses the existing copied request/result model in ABI 1 and
+ABI 2, without changing any structure layout. Its body must be empty. Metadata
+accepts only `action` and, for `invite`, an optional decimal-string `session_id`.
+
+| Metadata | Successful result |
+| --- | --- |
+| `{"action":"status"}` | HTTP 200, JSON body `{"available":bool,"active":bool}` |
+| `{"action":"friends"}` | HTTP 204 after dispatching the native Friends panel request |
+| `{"action":"invite","session_id":"..."}` | HTTP 204 after dispatching the native party invitation panel request |
+
+An invitation panel requires a party in the exact title/build/realm namespace,
+committed game membership and current provider membership for the local user.
+Invisible room directories are refused. With no `session_id`, exactly one
+eligible party must exist: none returns `OSW_NOT_FOUND`, several return
+`OSW_LIMIT`. Invalid metadata or a nonempty body returns `OSW_INVALID_ARGUMENT`.
+An unknown action, the lab backend or missing optional overlay capabilities
+returns `OSW_NOT_SUPPORTED`. When Steam supports the operation but its overlay
+is unavailable, `status` succeeds with `available:false`; opening a panel
+returns `OSW_UNAVAILABLE`.
+
+HTTP 204 acknowledges dispatch of a provider call, not a visible panel, a sent
+invitation or acceptance. Cancelling an already dispatched request cannot undo
+the native UI. Closing that UI creates no invitation success. Join requests
+continue through the existing invitation/namespace checks and the game's
+explicit membership commit.
+
+`OSW_OVERLAY_CHANGED` (8) is a copied event with `change_kind` 0 for inactive or
+1 for active; its identity/session fields are empty. Hosts can recover current
+state with `status`. The library does not pause gameplay or disconnect a party
+when the overlay opens or closes. Steam calls and callback handling stay on the
+library worker.
+
+The host must initialize Steam before creating the graphics device. Overlay
+availability can initially be false while Steam prepares its renderer hook;
+the game must continue rendering. These requirements and the native invite
+panel are documented in Valve's [overlay guide](https://partner.steamgames.com/doc/features/overlay)
+and [ISteamFriends reference](https://partner.steamgames.com/doc/api/ISteamFriends#ActivateGameOverlayInviteDialog).
+
 ## Native P2P opt-in (ABI extension 2, 2026-10-16)
 
 `osw_config`, `osw_create` and all request/result/event layouts remain ABI 1.

@@ -178,6 +178,14 @@ class SteamBackend final : public core::Backend {
             if (network.failed)
                 failed = true;
         }
+        if (runtime && platform && identity_value.signed_in && config.online_id.empty() &&
+            (!p2p || p2p->supports_name_updates())) {
+            auto name = core::online_id_from_persona(runtime->persona(), identity_value.account_id);
+            if (name != identity_value.online_id && platform->update_name(name) &&
+                (!p2p || p2p->update_name(name)))
+                identity_value.online_id = std::move(name);
+            fail_runtime();
+        }
         for (auto &result : results)
             update.results.push_back(std::move(result));
         results.clear();

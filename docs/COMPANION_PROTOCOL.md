@@ -29,6 +29,27 @@ peer. Native OSW_TOKEN requests in companion mode return that same envelope.
 After all listeners and storage are ready the child sends
 `{v:1,event:"ready"}`. The parent exposes readiness via P2P `status`.
 
+A child supporting live owner-name changes advertises
+`{v:1,event:"ready",capabilities:["owner.name.v1"]}`. Capabilities contain at
+most 16 strings of at most 64 bytes. Only after that advertisement may the
+parent send `{v:1,event:"owner.name",steam_id,online_id}`: these four fields
+are the complete frame. The ID must equal the initial owner and the new name
+must be valid UTF-8 of 1–16 bytes without control characters or surrounding
+spaces. No token, namespace, account or ownership change is permitted.
+The child applies these messages in pipe order, independently of matchmaking.
+Authentication and name persistence use the current trusted label. Existing
+sessions, PID, subject, database namespace and the exact bootstrap capability
+remain unchanged. The name embedded in that capability is its initial label,
+not an instruction to revert a later trusted rename. Neither credentials nor
+the name-update frame leave the inherited local pipe.
+
+Without this advertised capability the library retains its initial identity
+label for that context, rather than sending an event an old child cannot read.
+P2P `status.owner_name_updates` exposes support. A caller's explicit online-ID
+override remains fixed. Automatic Steam persona changes update the C API
+identity and presence; only already committed party memberships are renamed.
+Name changes emit identity/session-update events, never artificial join/leave.
+
 Child requests: `{v:1,id,op,...}`. Parent replies:
 `{v:1,id,ok:true,result:{...}}` or `{v:1,id,ok:false,error:"code"}`.
 Requests complete within 25 seconds; the child should allow 30 seconds.

@@ -8,6 +8,7 @@
 #include <deque>
 #include <vector>
 #include <cstring>
+#include <mutex>
 #ifdef _WIN32
 #define EXPORT extern "C" __declspec(dllexport)
 #else
@@ -36,6 +37,11 @@ bool network_failed_once = false, network_reset = false;
 bool network_session_delivered = false, network_session_accepted = false;
 Identity network_session_identity{};
 int last_lobby_type = -1, distance = 1;
+OverlayActivated overlay_reply{};
+int overlay_reply_size = 0, overlay_opens = 0;
+bool overlay_reply_pending = false, overlay_callback = false;
+std::mutex persona_mutex;
+std::string persona_value = " Fixture\x01 Persona \xf0\x9f\x8f\x8e";
 } // namespace
 EXPORT InitResult SteamAPI_InitFlat(ErrorMessage *) { return scenario() == "no-client" ? 2 : 0; }
 EXPORT InitResult SteamInternal_GameServer_Init_V2(std::uint32_t ip, std::uint16_t game,
@@ -57,6 +63,12 @@ EXPORT void SteamAPI_ManualDispatch_RunFrame(Pipe) { ++frame_count; }
 EXPORT bool SteamAPI_ManualDispatch_GetNextCallback(Pipe, Callback *cb) {
     if (callback_pending)
         std::abort();
+    if (overlay_reply_pending) {
+        *cb = {1, overlay_activated, reinterpret_cast<std::uint8_t *>(&overlay_reply), overlay_reply_size};
+        overlay_reply_pending = false;
+        overlay_callback = callback_pending = true;
+        return true;
+    }
     if (scenario() == "p2p" && !completed.empty()) {
         *cb = {1, api_call_completed, (std::uint8_t *)&completed.front(), sizeof(CallCompleted)};
         callback_pending = true;
@@ -109,6 +121,10 @@ EXPORT void SteamAPI_ManualDispatch_FreeLastCallback(Pipe) {
     if (!callback_pending)
         std::abort();
     callback_pending = false;
+    if (overlay_callback) {
+        overlay_callback = false;
+        return;
+    }
     if (scenario() == "p2p" && !completed.empty())
         completed.pop_front();
 }
@@ -161,6 +177,25 @@ EXPORT void *SteamAPI_SteamFriends_v018() {
     return scenario() == "missing-social" ? nullptr : &marker;
 }
 EXPORT void *SteamAPI_SteamMatchmaking_v009() { return &marker; }
+EXPORT void *SteamAPI_SteamUtils_v011() {
+    return scenario() == "overlay-unsupported" ? nullptr : &marker;
+}
+EXPORT bool SteamAPI_ISteamUtils_IsOverlayEnabled(void *) { return scenario() == "overlay"; }
+EXPORT void SteamAPI_ISteamFriends_ActivateGameOverlay(void *, const char *dialog) {
+    if (scenario() != "overlay" || std::strcmp(dialog, "friends")) std::abort();
+    ++overlay_opens;
+}
+EXPORT void SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog(void *, Id lobby) {
+    if (scenario() != "overlay" || lobby != 9001) std::abort();
+    ++overlay_opens;
+}
+EXPORT void OSWFixtureOverlayCallback(unsigned active, unsigned user, unsigned app, int size) {
+    if (overlay_reply_pending || callback_pending) std::abort();
+    overlay_reply = {static_cast<std::uint8_t>(active), static_cast<std::uint8_t>(user), app, 42};
+    overlay_reply_size = size;
+    overlay_reply_pending = true;
+}
+EXPORT int OSWFixtureOverlayOpens() { return overlay_opens; }
 EXPORT bool SteamAPI_ManualDispatch_GetAPICallResult(Pipe, std::uint64_t, void *out, int size,
                                                      int kind, bool *failed) {
     if (scenario() != "p2p")
@@ -191,7 +226,14 @@ EXPORT Id SteamAPI_ISteamFriends_GetFriendByIndex(void *, int, int) { return 0; 
 EXPORT int SteamAPI_ISteamFriends_GetFriendPersonaState(void *, Id) { return 0; }
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendPersonaName(void *, Id) { return ""; }
 EXPORT const char *SteamAPI_ISteamFriends_GetPersonaName(void *) {
-    return " Fixture\x01 Persona \xf0\x9f\x8f\x8e";
+    thread_local std::string value;
+    std::lock_guard lock(persona_mutex);
+    value = persona_value;
+    return value.c_str();
+}
+EXPORT void OSWFixtureSetPersona(const char *name) {
+    std::lock_guard lock(persona_mutex);
+    persona_value = name;
 }
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendRichPresence(void *, Id, const char *) {
     return "";
