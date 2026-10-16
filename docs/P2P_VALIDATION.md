@@ -380,3 +380,19 @@ usage error before provider startup. Private evidence:
 Tool SHA-256:
 `c80bfbf8c4885c529e2b69593a29154f055d6408ab5eaa0c43a1b7d7d9f4967d`.
 These build/CLI checks do not themselves exercise the live Steam directory.
+
+The updated diagnostic then passed a bounded live single-account Steam run at
+2026-10-16T11:35:21.778159Z (exit 0, 3.0 seconds), using source `992723f`, the
+exact tool hash above and `--virtual-endpoints`. Its four PASS results establish
+canonical endpoint readiness with protocol 2, invisible room creation with
+matching owner/member readback, filtered search containing the created room
+exactly once (one result), and metadata update/readback followed by leave.
+The user-supplied Steam API runtime SHA-256 was
+`e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d`.
+Private evidence is `runtime/p2p-live-20261016/canonical-directory-result.json`
+and `canonical-directory.log` in the same directory; the log SHA-256 is
+`d3c1123978607fd813f4f35ff1af8f4106fb39146c3ae99c8305244b8d1a108a`.
+The matching search does not qualify distance widening. This one-account
+directory check does not qualify remote peer/SDR transport, original-game Join
+or racing, or two-account Steam behavior. No source or build changed during
+this documentation follow-up.
