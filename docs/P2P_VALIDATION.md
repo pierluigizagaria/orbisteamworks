@@ -92,8 +92,27 @@ It prints no account IDs, room IDs, tokens or payloads. Coordinate its use with
 other Steam hosts: the library intentionally permits only one Steam context in
 a process, and one Steam client/account cannot qualify two live peers.
 
-The single-account diagnostic has not yet run in this library task; it awaits
-coordination with the native host's use of the one Steam client. Two-account message,
+The real single-account diagnostic passed on 2026-10-16 after coordinating
+exclusive use of the Steam client. Using the pinned executable and user-supplied
+SDK runtime above, it completed in 3.75 seconds with exit code 0:
+
+- Invisible lobby creation succeeded, and namespace plus actual owner/member
+  readback matched the signed-in account (one member).
+- The filtered directory search returned one matching room at the initial
+  distance. This live run did not exercise empty-result distance widening;
+  widening remains implemented and covered separately from this observation.
+- Metadata update/readback and explicit leave succeeded. The context was
+  destroyed and the Steam slot released for native integration.
+
+The full SDK output is private in ignored
+`runtime/p2p-live-20261016/single-account.log`; only diagnostic PASS lines and
+the exit code were reported. Its SHA-256 is
+`f5cc68d7458e2ff536df7e5410b866c2d11a375d50c7cd4aab2a08e951011002`.
+The library initializes Steam networking/relay
+support in this path, but initialization alone proves no direct or SDR peer
+connection. No account IDs, lobby IDs or token values are published here.
+
+Two-account message,
 SDR/WAN, game friend/invite UI and race-through-results acceptance remain
 separate requirements. The native integration record owns the original-game
 P1/P2/P3 results. Linux child/spawn/socket code is implemented but has not been

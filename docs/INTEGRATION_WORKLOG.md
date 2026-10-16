@@ -11,6 +11,13 @@ procedure are in [P2P_VALIDATION.md](P2P_VALIDATION.md). Its evidence must not b
 merged with the historical shadPS4 acceptance below or presented as native-game
 or two-account Steam acceptance.
 
+The subsequent real single-account `osw-p2p-check` passed invisible lobby
+creation, namespace/actual owner/member readback, initial-distance filtered
+search (one result), metadata update and leave. It completed in 3.75 seconds
+with exit code 0 and released its Steam context. Full SDK output stays in the
+ignored private log referenced by P2P_VALIDATION.md. This qualifies that narrow
+P4 live directory check, not two-peer transport, relay use or gameplay.
+
 ## Historical shadPS4 integration record
 
 Updated: 2026-10-15. The user expanded the task from gate 1 to the complete
