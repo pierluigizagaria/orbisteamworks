@@ -60,12 +60,27 @@ spaces.
 `RESOLVE_NAME` takes `online_id` and resolves the local user or known friends.
 `INVITE_SEND` takes `session_id` and a `to` array of known online IDs or decimal
 account IDs. `INVITE_ACCEPT` and `INVITE_DECLINE` take `invitation_id`.
+An exact known canonical decimal account ID takes precedence over a different
+friend's numeric online ID. An offline exact account fails without redirecting
+the invitation. If no known account matches, the existing online-name lookup
+still applies, including numeric names. Hosts selecting an account should pass
+its decimal account ID.
 Nonempty invitation messages/data are explicitly unsupported in this PoC.
 
 Events carry copied IDs and names. Session `change_kind` is 1 for a committed
 member joining, 2 for leaving, and 3 for metadata changes. Steam membership
 alone produces no committed membership event. Hosts translate these events
 onto their existing guest callback queues.
+
+`OSW_FRIENDS_CHANGED` also carries per-friend copied `account_id` and `online_id`:
+`change_kind` 1 means newly compatible/in game, 2 removed or no longer in game,
+and 3 a changed online-ID label. Removal retains the last notified label.
+Only friends matching the existing title/build/realm rules produce these
+details. A separate notification snapshot ensures that an intervening friend
+list GET cannot consume the transition. An unchanged ordinary poll produces no
+duplicate detail event. The existing generic refresh event (`account_id=0`)
+is retained for provider friend callbacks; hosts must not treat it as a user.
+The public structure layout and enum values are unchanged.
 
 Supported route families currently include session creation, metadata,
 members, immutable/changeable data, images, invitations and the local user's

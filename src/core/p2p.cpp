@@ -56,8 +56,11 @@ struct P2P::Impl {
     std::set<std::uint64_t> rooms;
     std::map<std::uint64_t, std::string> room_snapshots;
     struct Proxy {
-        std::uint64_t room;
+        std::uint64_t room = 0;
         bool friend_scope = false;
+        // An authenticated friend that read a live local advertisement may
+        // initiate pre-party UDP without a reciprocal advertisement lookup.
+        std::set<std::string> advertisement_grants;
         std::unique_ptr<UdpSocket> socket;
     };
     std::map<std::uint64_t, Proxy> proxies;
@@ -131,6 +134,9 @@ struct P2P::Impl {
             return false;
         auto list = social.members(room);
         return std::find(list.begin(), list.end(), peer) != list.end();
+    }
+    bool friend_authorized(const Proxy &proxy) const {
+        return proxy.friend_scope || !proxy.advertisement_grants.empty();
     }
     Json ad_frame(const std::string &op, const std::string &id, const std::string &context) {
         return {{"v", 1},
@@ -238,7 +244,7 @@ struct P2P::Impl {
                 ++it;
                 continue;
             }
-            if (it->second.friend_scope && friends.contains(it->first)) {
+            if (friend_authorized(it->second) && friends.contains(it->first)) {
                 it->second.room = 0;
                 ++it;
             } else
@@ -319,9 +325,12 @@ struct P2P::Impl {
                         reply(command, request, false, {}, "limit");
                         return;
                     }
-                    if (payload.empty())
+                    if (payload.empty()) {
                         advertisements.erase(context);
-                    else
+                        for (auto &[peer, proxy] : proxies)
+                            proxy.advertisement_grants.erase(context);
+                        refresh_rooms();
+                    } else
                         advertisements[context] = payload;
                     reply(command, request, true);
                     return;
@@ -582,10 +591,13 @@ struct P2P::Impl {
             ++it;
         }
         for (auto it = proxies.begin(); it != proxies.end();) {
-            if (it->second.room && !member(it->second.room, it->first) && it->second.friend_scope &&
+            if (!friends.contains(it->first))
+                it->second.advertisement_grants.clear();
+            if (it->second.room && !member(it->second.room, it->first) && friend_authorized(it->second) &&
                 friends.contains(it->first))
                 it->second.room = 0;
-            if (!allowed.contains(it->first) || !member(it->second.room, it->first))
+            if (!allowed.contains(it->first) || !member(it->second.room, it->first) ||
+                (!it->second.room && !friend_authorized(it->second)))
                 it = proxies.erase(it);
             else
                 ++it;
@@ -774,6 +786,8 @@ struct P2P::Impl {
                 ++it;
             }
         for (auto &[peer, proxy] : proxies) {
+            if (!proxy.socket)
+                continue;
             for (int count = 0; count < 128; ++count) {
                 std::string bytes, address;
                 std::uint16_t port = 0;
@@ -822,7 +836,9 @@ struct P2P::Impl {
                         response["found"] = found != advertisements.end();
                         if (found != advertisements.end())
                             response["payload"] = found->second;
-                        social.send_peer(message.sender, 49, response.dump());
+                        if (social.send_peer(message.sender, 49, response.dump()) &&
+                            found != advertisements.end())
+                            proxies[message.sender].advertisement_grants.insert(context);
                     } else if (op == "reply") {
                         auto it = ad_pending.find(id);
                         if (it == ad_pending.end() || it->second.peer != message.sender ||
@@ -855,7 +871,7 @@ struct P2P::Impl {
                       {"payload", base64(bytes)}});
             else if (message.channel == 48 && bytes.size() <= 65507) {
                 if (!room &&
-                    (!proxies.contains(message.sender) || !proxies.at(message.sender).friend_scope))
+                    (!proxies.contains(message.sender) || !friend_authorized(proxies.at(message.sender))))
                     continue;
                 auto &proxy = proxies[message.sender];
                 proxy.room = room;

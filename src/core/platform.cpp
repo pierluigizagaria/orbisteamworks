@@ -81,6 +81,9 @@ struct Platform::Impl {
     std::map<Id, std::map<Id, std::string>> member_snapshots;
     std::map<Id, std::string> document_snapshots;
     std::map<Id, std::pair<Friend, std::string>> known_friends;
+    // List requests refresh known_friends independently of provider callbacks.
+    // Keep notification history separate so a GET cannot swallow a transition.
+    std::map<Id, std::string> notified_friends;
     struct Pending {
         Request request;
         Id lobby = 0;
@@ -169,7 +172,7 @@ struct Platform::Impl {
         std::set<Id> remaining;
         for (auto &user : list) {
             remaining.insert(user.id);
-            if (social.presence(user.id, "osw.protocol") != "1" ||
+            if (!user.online || social.presence(user.id, "osw.protocol") != "1" ||
                 social.presence(user.id, "osw.title") != config.title ||
                 social.presence(user.id, "osw.build") != config.build ||
                 social.presence(user.id, "osw.realm") != config.realm) {
@@ -191,6 +194,22 @@ struct Platform::Impl {
         for (auto &[key, invitation] : invitations)
             if (auto friend_ = known_friends.find(invitation.sender); friend_ != known_friends.end())
                 invitation.name = friend_->second.second;
+    }
+    void notify_friend_changes() {
+        std::map<Id, std::string> current;
+        for (const auto &[id, value] : known_friends)
+            if (value.first.online)
+                current[id] = value.second;
+        for (const auto &[id, name] : current) {
+            const auto previous = notified_friends.find(id);
+            if (previous == notified_friends.end() || previous->second != name)
+                update.events.push_back({OSW_FRIENDS_CHANGED, 0, id, {}, {}, name,
+                                         previous == notified_friends.end() ? 1u : 3u});
+        }
+        for (const auto &[id, name] : notified_friends)
+            if (!current.contains(id))
+                update.events.push_back({OSW_FRIENDS_CHANGED, 0, id, {}, {}, name, 2});
+        notified_friends = std::move(current);
     }
     Json user(Id id, const std::string &name) {
         return Json{{"accountId", std::to_string(id)}, {"onlineId", name}};
@@ -544,10 +563,13 @@ struct Platform::Impl {
                 return;
             }
             const auto target = recipient.get<std::string>();
-            auto found =
-                std::find_if(known_friends.begin(), known_friends.end(), [&](const auto &pair) {
-                    return std::to_string(pair.first) == target || pair.second.second == target;
-                });
+            const auto account = parse_decimal_id(target);
+            auto found = account ? known_friends.find(*account) : known_friends.end();
+            // An exact account selection cannot be redirected by another
+            // friend's numeric online ID. Numeric names still work otherwise.
+            if (found == known_friends.end())
+                found = std::find_if(known_friends.begin(), known_friends.end(),
+                                     [&](const auto &pair) { return pair.second.second == target; });
             if (found == known_friends.end() || !found->second.first.online) {
                 error(request, 404);
                 return;
@@ -1075,6 +1097,7 @@ void Platform::process(const std::vector<SocialEvent> &events) {
             p->blobs.message(event);
         } else if (event.kind == SocialEvent::friends_changed) {
             p->refresh_friends();
+            p->notify_friend_changes();
             p->update.events.push_back({OSW_FRIENDS_CHANGED});
         } else if (event.kind == SocialEvent::invitation ||
                    event.kind == SocialEvent::join_requested) {

@@ -1,4 +1,5 @@
 #include "core/blobs.hpp"
+#include "core/local_io.hpp"
 #include "core/multipart.hpp"
 #include "core/p2p.hpp"
 #include "core/platform.hpp"
@@ -25,6 +26,7 @@ struct Fixture : Social {
     std::map<Id, Id> owners;
     std::vector<Friend> friend_values;
     std::vector<Id> left, requested;
+    std::vector<Id> invited;
     std::vector<std::pair<Id, std::string>> messages;
     int joins = 0, invites = 0, writes = 0, fail_write = -1;
     std::string fail_presence;
@@ -58,8 +60,9 @@ struct Fixture : Social {
         left.push_back(lobby);
         std::erase(users[lobby], local);
     }
-    bool invite(Id, Id) override {
+    bool invite(Id, Id recipient) override {
         ++invites;
+        invited.push_back(recipient);
         return true;
     }
     bool request_data(Id lobby) override {
@@ -396,6 +399,10 @@ void friend_display_names() {
     social.presence_values[peer]["osw.name"] = "RemoteName";
     social.friend_values[0].online = false;
     platform.submit({4, OSW_FRIENDS});
+    check(Json::parse(body(single(platform)))["friendList"].empty(),
+          "cached game presence cannot override provider offline state");
+    social.friend_values[0].online = true;
+    platform.submit({5, OSW_FRIENDS});
     auto returned = Json::parse(body(single(platform)))["friendList"];
     check(returned.size() == 1 && returned[0]["presence"]["onlineStatus"] == "online" &&
               returned[0]["personalDetail"]["displayName"] == "Updated Persona",
@@ -403,6 +410,160 @@ void friend_display_names() {
     platform.stop();
     check(exceptions.quiet(), "persona sanitization raised a host first-chance exception");
     std::cout << "friend display-name cases passed; first-chance exceptions: 0\n";
+}
+void friend_presence_events() {
+    Config config{"", "LocalName", "5760", "1.21", "normal"};
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start(), "friend notification fixture starts before remote user");
+    const auto refresh_list = [&] {
+        platform.submit({1, OSW_FRIENDS});
+        check(single(platform).http_status == 200, "ordinary friend GET succeeds");
+    };
+    const auto changed = [&] {
+        platform.process({{SocialEvent::friends_changed}});
+        auto events = platform.take_update().events;
+        std::erase_if(events, [](const Event &event) {
+            return event.type != OSW_FRIENDS_CHANGED || !event.account_id;
+        });
+        return events;
+    };
+    social.friend_values = {{peer, "Remote Persona", true}, {peer + 1, "Foreign", true}};
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.name"] = "RemoteName";
+    social.presence_values[peer + 1] = social.presence_values[peer];
+    social.presence_values[peer + 1]["osw.realm"] = "foreign";
+    refresh_list(); // A read before callback delivery must not consume the change.
+    auto events = changed();
+    check(events.size() == 1 && events[0].account_id == peer &&
+              events[0].online_id == "RemoteName" && events[0].change_kind == 1,
+          "late compatible friend carries copied identity; foreign namespace excluded");
+    refresh_list();
+    platform.process({});
+    check(platform.take_update().events.empty() && changed().empty(),
+          "unchanged lists and polls do not duplicate per-friend notifications");
+    social.presence_values[peer]["osw.name"] = "Renamed";
+    refresh_list();
+    events = changed();
+    check(events.size() == 1 && events[0].account_id == peer &&
+              events[0].online_id == "Renamed" && events[0].change_kind == 3,
+          "rename emits metadata change after an intervening GET");
+    social.friend_values[0].online = false;
+    refresh_list();
+    events = changed();
+    check(events.size() == 1 && events[0].change_kind == 2 && events[0].online_id == "Renamed",
+          "offline friend cannot remain eligible through stale matching presence");
+    social.friend_values[0].online = true;
+    refresh_list();
+    events = changed();
+    check(events.size() == 1 && events[0].change_kind == 1 && events[0].online_id == "Renamed",
+          "provider online transition restores the current compatible friend");
+    social.presence_values[peer].clear();
+    refresh_list();
+    events = changed();
+    check(events.size() == 1 && events[0].account_id == peer &&
+              events[0].online_id == "Renamed" && events[0].change_kind == 2,
+          "leaving game carries last notified name");
+    social.presence_values[peer] = social.presence_values[self];
+    social.presence_values[peer]["osw.name"] = "Returned";
+    events = changed();
+    check(events.size() == 1 && events[0].change_kind == 1 && events[0].online_id == "Returned",
+          "same account reappears after restart");
+    social.friend_values.clear();
+    refresh_list();
+    events = changed();
+    check(events.size() == 1 && events[0].change_kind == 2 && events[0].online_id == "Returned",
+          "removed friend retains its last copied label");
+}
+void p2p_advertisement_eligibility() {
+    struct PeerFixture : Fixture {
+        std::vector<PeerMessage> incoming;
+        bool send_ok = true;
+        bool send_peer(Id, int, const std::string &) override { return send_ok; }
+        std::vector<PeerMessage> take_peer_messages() override {
+            std::vector<PeerMessage> result;
+            result.swap(incoming);
+            return result;
+        }
+    } social;
+    Config config{"", "LocalName", "5760", "1.21", "grant-fixture"};
+    config.game_bind = "127.0.0.124";
+    UdpSocket game(config.game_bind);
+    config.game_port = game.port();
+    social.friend_values = {{peer, "Remote", true}};
+    social.presence_values[peer] = {{"osw.protocol", "1"}, {"osw.title", config.title},
+                                  {"osw.build", config.build}, {"osw.realm", config.realm}};
+    P2P p2p(config, {true, self, "LocalName"}, social);
+    p2p.process({});
+    const auto set_ad = [&](const char *payload) {
+        p2p.submit({1, OSW_P2P, 30000, Json{{"op", "advertisement.set"},
+                     {"context", "fixture"}, {"payload", payload}}.dump()});
+        auto update = p2p.poll();
+        check(update.results.size() == 1 && update.results[0].status == OSW_OK,
+              "fixture advertisement update succeeds");
+    };
+    const auto query = [&] {
+        social.incoming.push_back({peer, 49, Json{{"v", 1}, {"op", "query"}, {"id", "1"},
+            {"context", "fixture"}, {"protocol", "osw/1"}, {"title", config.title},
+            {"build", config.build}, {"realm", config.realm}}.dump()});
+        p2p.poll();
+    };
+    const std::string datagram = std::string("OSW1") + std::string(8, '\0') + "fixture";
+    const auto sent_count = [&] {
+        p2p.submit({2, OSW_P2P, 30000, "{\"op\":\"status\"}"});
+        return Json::parse(p2p.poll().results[0].metadata)["proxy_sent"].get<Id>();
+    };
+    const auto datagram_delivered = [&] {
+        auto before = sent_count();
+        social.incoming.push_back({peer, 48, datagram});
+        p2p.poll();
+        return sent_count() > before;
+    };
+    set_ad("YWQ=");
+    query();
+    check(datagram_delivered(), "a served live ad authorizes initial inbound UDP");
+    social.friend_values[0].online = false; // Preserve stale namespace presence deliberately.
+    p2p.process({{SocialEvent::friends_changed}});
+    check(!datagram_delivered(), "offline friend immediately loses advertisement grant");
+    social.friend_values[0].online = true;
+    p2p.process({{SocialEvent::friends_changed}});
+    check(!datagram_delivered(), "returning online cannot resurrect the old grant");
+    social.send_ok = false;
+    query();
+    check(!datagram_delivered(), "failed advertisement reply does not authorize UDP");
+    social.send_ok = true;
+    query();
+    check(datagram_delivered(), "fresh successful read restores eligible friend's grant");
+    auto before = sent_count();
+    social.incoming.push_back({peer, 48, datagram});
+    set_ad(""); // Withdrawal precedes an already queued carrier datagram.
+    check(sent_count() == before, "withdrawal rejects an in-flight datagram before forwarding");
+}
+void exact_invitation_recipient() {
+    Config config{"", "LocalName", "5760", "1.21", "normal"};
+    Fixture social;
+    Platform platform(config, {true, self, "LocalName"}, social);
+    check(platform.start(), "recipient binding fixture starts");
+    social.friend_values = {{101, "Numeric alias", true}, {202, "Selected account", true}};
+    for (auto id : {101, 202}) social.presence_values[id] = social.presence_values[self];
+    social.presence_values[101]["osw.name"] = "202";
+    social.presence_values[202]["osw.name"] = "Selected";
+    create(platform, social);
+    const auto send = [&](const char *recipient) {
+        platform.submit({2, OSW_INVITE_SEND, 30000,
+                         Json{{"session_id", std::to_string(lobby_id)}, {"to", {recipient}}}.dump()});
+        return single(platform);
+    };
+    check(send("202").http_status == 204 && social.invited.back() == 202,
+          "canonical account outranks another friend's numeric name");
+    social.presence_values[101]["osw.name"] = "303";
+    check(send("303").http_status == 204 && social.invited.back() == 101,
+          "numeric online name still resolves when no account matches");
+    social.presence_values[101]["osw.name"] = "202";
+    social.presence_values[202].clear();
+    const auto before = social.invites;
+    check(send("202").http_status == 404 && social.invites == before,
+          "an offline exact account cannot redirect to another user's name");
 }
 void diagnostic_friends() {
     Config config{"", "LocalName", "5760", "1.21", "normal"};
@@ -482,6 +643,9 @@ int main() {
         overlay_contracts();
         p2p_follow_lifecycle();
         friend_display_names();
+        friend_presence_events();
+        p2p_advertisement_eligibility();
+        exact_invitation_recipient();
         diagnostic_friends();
         Config config{"", "LocalName", "5760", "1.21", "normal"};
         Identity identity{true, self, "LocalName"};

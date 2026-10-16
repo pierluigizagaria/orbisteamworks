@@ -102,7 +102,9 @@ typedef struct osw_event {
     uint32_t size, type;
     uint64_t request_id, account_id;
     char session_id[32], invitation_id[65], online_id[17];
-    uint32_t change_kind; /* Session: 1 joined, 2 left, 3 metadata. Overlay: 0 closed, 1 active. */
+    uint32_t change_kind; /* Session: 1 joined, 2 left, 3 metadata.
+                            Friend: 1 in-game, 2 removed/offline, 3 name changed;
+                            account_id=0 is a generic refresh. Overlay: 0 closed, 1 active. */
 } osw_event;
 
 int32_t osw_create(const osw_config *config, osw_context **output);

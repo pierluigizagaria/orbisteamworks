@@ -106,8 +106,8 @@ Json receive(osw::core::UdpSocket &socket) {
     return {{"payload", osw::core::base64(bytes)}, {"address", address}, {"port", port}};
 }
 int peer_role() {
-    Client client(std::getenv("OSW_TEST_ROOT"), 100002, "127.0.0.22");
-    osw::core::UdpSocket game("127.0.0.22", 3074);
+    Client client(std::getenv("OSW_TEST_ROOT"), 100002, "127.0.0.122");
+    osw::core::UdpSocket game("127.0.0.122", 3074);
     std::cout << Json{{"ready", true}}.dump() << std::endl;
     std::string line;
     while (std::getline(std::cin, line)) {
@@ -119,6 +119,16 @@ int peer_role() {
             } catch (...) {
                 answer = client.call({{"op", "status"}});
             }
+        } else if (command.value("test", std::string{}) == "udp.empty") {
+            std::string bytes, address;
+            std::uint16_t port = 0;
+            bool empty = true;
+            const auto until = Clock::now() + std::chrono::milliseconds(200);
+            while (Clock::now() < until && empty) {
+                empty = !game.receive(bytes, address, port);
+                pause();
+            }
+            answer = {{"empty", empty}};
         } else if (command.value("test", std::string{}) == "udp.send") {
             std::string bytes;
             check(osw::core::unbase64(command["payload"], bytes, 65507), "decode");
@@ -183,7 +193,7 @@ int main(int argc, char **argv) {
                     ("p2p-test-" + osw::core::hex(osw::core::random_secret()).substr(0, 12));
         std::filesystem::create_directories(root);
         {
-            Client local(root.string(), 100001, "127.0.0.21");
+            Client local(root.string(), 100001, "127.0.0.121");
             for (const auto &invalid : {"null", "[]", "{"})
                 check(local.call_raw(invalid)["status"] != 0, "invalid JSON rejected");
             check(local.call({{"op", "status"}})["result"]["ready"] == true,
@@ -191,7 +201,7 @@ int main(int argc, char **argv) {
             for (const auto action : {"status", "friends", "invite"})
                 check(local.call({{"action", action}}, OSW_OVERLAY)["status"] == OSW_NOT_SUPPORTED,
                       "lab backend never fabricates native overlay support");
-            osw::core::UdpSocket game("127.0.0.21", 3074);
+            osw::core::UdpSocket game("127.0.0.121", 3074);
             osw::core::Config config;
             config.companion_path = exe;
             config.companion_environment =
@@ -212,6 +222,27 @@ int main(int argc, char **argv) {
                   "cross-process friend list");
             auto lookup = local.call({{"op", "name.lookup"}, {"names", {"LabTwo"}}});
             check(lookup["result"]["players"].size() == 1, "local friend name lookup");
+            auto initial_endpoint = local.call(
+                {{"op", "peer.endpoint"}, {"scope", "friend"}, {"peer", "100002"}})["result"];
+            const auto expect_preparty_drop = [&] {
+                auto before = remote(peer, {{"metadata", {{"op", "status"}}}})["result"];
+                check(game.send("ungranted", initial_endpoint["address"], initial_endpoint["port"]),
+                      "ungranted datagram sent by local game");
+                const auto until = Clock::now() + std::chrono::seconds(3);
+                for (;;) {
+                    auto after = remote(peer, {{"metadata", {{"op", "status"}}}})["result"];
+                    if (after["network_received"].get<std::uint64_t>() >
+                        before["network_received"].get<std::uint64_t>()) {
+                        check(after["proxy_sent"] == before["proxy_sent"] &&
+                                  remote(peer, {{"test", "udp.empty"}})["empty"] == true,
+                              "ungranted preparty datagram never reaches remote game");
+                        break;
+                    }
+                    check(Clock::now() < until, "ungranted carrier delivery deadline");
+                    pause();
+                }
+            };
+            expect_preparty_drop();
             check(remote(peer, {{"metadata",
                                  {{"op", "advertisement.set"},
                                   {"context", "fixture"},
@@ -227,6 +258,29 @@ int main(int argc, char **argv) {
                 pause();
             } while (Clock::now() < ad_end);
             check(ad["result"]["payload"] == "YWQ=", "private friend ad query before party/room");
+            check(game.send("first", initial_endpoint["address"], initial_endpoint["port"]),
+                  "unilateral friend bootstrap sends before any room");
+            auto bootstrap = remote(peer, {{"test", "udp.recv"}});
+            check(bootstrap.value("payload", std::string{}) == osw::core::base64("first"),
+                  "serving a live advertisement authorizes the reverse proxy");
+            check(remote(peer, {{"test", "udp.send"}, {"payload", osw::core::base64("reply")},
+                                {"address", bootstrap["address"]}, {"port", bootstrap["port"]}})["sent"] == true &&
+                      receive(game)["payload"] == osw::core::base64("reply"),
+                  "unilateral preparty bootstrap returns without reciprocal lookup");
+            check(remote(peer, {{"metadata", {{"op", "advertisement.set"}, {"context", "fixture"},
+                                               {"payload", ""}}}})["status"] == 0,
+                  "withdraw local advertisement");
+            expect_preparty_drop();
+            check(remote(peer, {{"metadata", {{"op", "advertisement.set"}, {"context", "fixture"},
+                                               {"payload", "YWQ="}}}})["status"] == 0,
+                  "publish a later advertisement");
+            expect_preparty_drop();
+            check(local.call({{"op", "advertisement.get"}, {"context", "fixture"},
+                              {"peer", "100002"}})["status"] == 0,
+                  "fresh advertisement read restores only that friend's authorization");
+            check(game.send("renewed", initial_endpoint["address"], initial_endpoint["port"]) &&
+                      remote(peer, {{"test", "udp.recv"}}).value("payload", std::string{}) ==
+                          osw::core::base64("renewed"), "fresh grant delivers again");
             auto bad =
                 local.call({{"op", "directory.create"}, {"metadata", {{"secret", "forbidden"}}}});
             check(bad["status"] != 0, "private metadata rejected");
@@ -439,7 +493,7 @@ int main(int argc, char **argv) {
         }
         auto marker = (root / "companion.done").string();
         {
-            Client child(root.string(), 100003, "127.0.0.23", exe,
+            Client child(root.string(), 100003, "127.0.0.123", exe,
                          Json{{"OSW_TEST_ROLE", "companion"}, {"OSW_TEST_DONE", marker}}.dump());
             auto end = Clock::now() + std::chrono::seconds(5);
             while (!child.call({{"op", "status"}})["result"]["ready"].get<bool>()) {

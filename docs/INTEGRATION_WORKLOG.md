@@ -556,3 +556,48 @@ These are implementation fixtures (I). No live Steam persona was changed,
 no game UI was driven, no installed binary was replaced and no live rename or
 cross-account overlay acceptance is claimed. Existing opaque game payloads
 are not rewritten to guess embedded names. Linux runtime remains unqualified.
+
+## Unilateral friend UDP and copied friend changes (2026-10-16)
+
+The original-game Lab pair exposed a gap hidden by the previous room-first
+fixtures: only the joining friend reads the advertiser's publisher record, so
+the advertiser had no reverse friend proxy for the first room-zero datagram.
+Serving a live private advertisement now grants that authenticated, compatible
+friend a reverse UDP path. Allocation remains lazy; source endpoint checks and
+directory membership checks are unchanged. Withdrawal and loss of compatible
+friend presence revoke the grant. Neither re-publication nor coming online
+again resurrects it without a new successful query. An explicit local friend
+endpoint is independent authorization. No room or party membership is invented.
+
+Friend callbacks now include copied account/name details for online, removal
+and rename transitions. Notification history is independent of list requests,
+so an intervening GET cannot swallow an event. Provider offline state overrides
+stale matching rich presence. The generic refresh event remains compatible.
+Invitation recipient lookup gives an exact canonical account ID priority over
+another friend's numeric name; numeric-name lookup remains supported when no
+known account matches. Public ABI layouts remain unchanged.
+
+MSVC static/shared Release build `build/preparty-candidate/` passed all 36 CTest
+cases (24.88 seconds). Coverage includes unilateral pre-room UDP, withdrawal,
+re-publication, offline/online transitions, failed advertisement replies,
+withdrawal with queued incoming UDP, late friend startup and rename after GET,
+duplicate suppression and exact numeric recipient binding. The cross-process
+fixture now uses `.121/.122/.123` loopbacks; an initial `.21` bind collision
+failed without stopping another process and prompted that fixture isolation fix.
+
+The extended actual two-child publisher probe failed with the previous DLL
+`508a135f...` at the fixed step `unilateral pre-room delivery`, with no directory
+room events. With the new candidate, both default and `--party` probes passed:
+the default performs bidirectional UDP before any platform party or directory
+room; both exercise room transport and actual follower disconnect/seat removal.
+The publisher executable remained unchanged at SHA-256
+`0fc70159dad030a978f7126e25368fec4e911cc8d418980f7268fe290a027369`.
+Candidate DLL SHA-256:
+`8623d614894d7ac7781e5e2c99ef67986c612211de968b087ff66faebcd8132e`.
+
+Private evidence: `out/preparty-candidate-build.log`; publisher
+`.cache/p2p-probe/preparty-before-fix.log`, `preparty-after-fix-default.log` and
+`preparty-after-fix-party.log`. The probe uses only its `.60/.70` publisher and
+`.61/.71` game loopbacks, unique hub/database directories and owned child handles.
+These are implementation fixtures (I), not original-game, two-account Steam or
+WAN acceptance. No active game, Steam client or installed binary was changed.

@@ -70,6 +70,19 @@ Requests complete within 25 seconds; the child should allow 30 seconds.
 | advertisement.get | `peer`, `context` | `payload` from that friend's private advertisement, or explicit not-found |
 | status | none | `ready`, `backend` |
 
+Serving a successful private advertisement query grants that authenticated,
+currently compatible friend permission to initiate pre-party UDP for the
+advertisement context. The receiving library allocates its reverse proxy only
+when needed; the advertiser need not perform a reciprocal friend lookup.
+The grant exists only after a reply for an actual live local advertisement has
+been submitted successfully. Unknown/missing advertisements and invalid peers
+grant nothing. Withdrawing an advertisement removes its grants; losing the
+friend's compatible in-game presence also revokes them. Re-publication requires
+a fresh query. Explicit local friend-endpoint requests remain a separate
+authorization. Established directory membership still authorizes its existing
+room transport independently; no grant creates or commits room/party membership.
+The game source endpoint and incoming namespace/sender checks are unchanged.
+
 A room record is `{room_id,owner,members:[decimal ID strings],metadata:{...}}`.
 Search results for rooms not yet joined have an empty `members` array and use
 the advertised owner. Steam permits actual owner/member queries only after
