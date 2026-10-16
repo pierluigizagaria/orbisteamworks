@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <bcrypt.h>
 #else
+#include "core/child_wait.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -548,16 +549,20 @@ void Child::stop() {
         p->input = -1;
     }
     if (p->process > 0) {
+        auto reap = [&](int options) {
+            return wait_owned_child(p->process, [&](auto process) {
+                auto result = waitpid(process, nullptr, options);
+                return ChildWaitResult{result, result < 0 ? errno : 0};
+            });
+        };
         for (int i = 0; i < 50; ++i) {
-            if (waitpid(p->process, nullptr, WNOHANG) == p->process) {
-                p->process = -1;
+            if (!reap(WNOHANG))
                 break;
-            }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (p->process > 0) {
             kill(p->process, SIGKILL);
-            waitpid(p->process, nullptr, 0);
+            reap(0);
             p->process = -1;
         }
     }

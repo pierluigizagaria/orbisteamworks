@@ -16,6 +16,9 @@ target_include_directories(osw-p2p-tests PRIVATE ../src)
 target_link_libraries(osw-p2p-tests PRIVATE orbisteamworks nlohmann_json::nlohmann_json)
 add_test(NAME p2p-cross-process-lab COMMAND osw-p2p-tests)
 set_tests_properties(p2p-cross-process-lab PROPERTIES TIMEOUT 60)
+add_executable(osw-child-wait-tests child_wait_tests.cpp)
+target_include_directories(osw-child-wait-tests PRIVATE ../src)
+add_test(NAME child-wait-ownership COMMAND osw-child-wait-tests)
 
 # These fixtures are our own code, never Steam SDK files. They are only passed
 # through --library by offline tests; production has no simulated fallback.

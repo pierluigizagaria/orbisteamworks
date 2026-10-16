@@ -119,6 +119,16 @@ P1/P2/P3 results. Linux child/spawn/socket code is implemented but has not been
 compiled or accepted on Linux in this Windows run. The lab UDP carrier limits
 game datagrams to 65,487 bytes because of its additional local headers.
 
+A subsequent targeted POSIX fix invalidates companion ownership when `waitpid`
+reports `ECHILD` and retries `EINTR`, including the final reap. A platform-neutral
+regression exercises these syscall outcomes, and the Windows static library plus
+cross-process lifecycle regression pass. The running shared DLL was left at its
+pinned hash above; this was a source/static-test update, not a runtime deployment.
+Linux compilation/execution remains unavailable. POSIX hosts must reserve waiting
+and reaping of the companion PID exclusively to the library; concurrent host
+reaping remains unsupported while shutdown uses PID-based signaling. The pure
+test proves `ECHILD` handling, not a stable-process-handle guarantee on Linux.
+
 The native host agent subsequently passed its real Steam host-adapter probe
 against this DLL and publisher v2: NP identity and child readiness, guest osw1
 admission, the in-process friend-list query, and party creation, metadata/binary
