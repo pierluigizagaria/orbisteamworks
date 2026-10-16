@@ -322,6 +322,12 @@ void Child::start(const Config &config) {
     if (resumed == (DWORD)-1)
         throw std::runtime_error("companion resume");
 #else
+    // The host must preserve waitable child ownership for this context's lifetime.
+    // Refuse known auto-reaping policies without changing process-wide signal state.
+    struct sigaction child_policy {};
+    if (sigaction(SIGCHLD, nullptr, &child_policy) != 0 ||
+        child_policy.sa_handler == SIG_IGN || (child_policy.sa_flags & SA_NOCLDWAIT) != 0)
+        throw std::runtime_error("companion requires exclusive child reaping");
     int in[2], out[2];
     if (pipe2(in, O_CLOEXEC))
         throw std::runtime_error("companion pipe");

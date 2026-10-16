@@ -9,6 +9,12 @@ All account/lobby/request IDs are decimal strings, except correlation `id`,
 which is an opaque nonempty string of at most 64 bytes. Every frame has `v:1`.
 Unknown operations fail closed. The child exits on stdin EOF; the parent owns
 the child in a Windows kill-on-close Job Object. No session-idle timeout exists.
+On POSIX the host must leave this child exclusively to the library for waiting
+and reaping throughout the context lifetime. Launch refuses `SIGCHLD=SIG_IGN`
+and `SA_NOCLDWAIT` without changing the host's signal disposition. A host that
+concurrently reaps this child or changes its policy violates that ownership
+contract; PID-based shutdown does not provide a stable-process-handle guarantee.
+Linux runtime acceptance remains pending.
 The library sets generic child `OSW_COMPANION_PROTOCOL=1`. Provider-specific
 settings belong in the caller's environment map; for the CTR publisher these
 include `CTR_COMPANION=stdio`, `CTR_ADMISSION=local` and

@@ -128,6 +128,13 @@ Linux compilation/execution remains unavailable. POSIX hosts must reserve waitin
 and reaping of the companion PID exclusively to the library; concurrent host
 reaping remains unsupported while shutdown uses PID-based signaling. The pure
 test proves `ECHILD` handling, not a stable-process-handle guarantee on Linux.
+The POSIX launcher also checks the existing `SIGCHLD` disposition and refuses
+`SIG_IGN` or `SA_NOCLDWAIT` before allocating pipes or launching a child. It never
+changes that process-wide state. This catches known auto-reaping policies at
+startup; the host must preserve exclusive ownership afterward. The guard's
+POSIX syscall branch has not been compiled or run on Linux here. A Windows
+static-only regression build and the existing pure ownership/cross-process tests
+do not qualify that branch. No Windows DLL was rebuilt or deployed for this guard.
 
 The native host agent subsequently passed its real Steam host-adapter probe
 against this DLL and publisher v2: NP identity and child readiness, guest osw1
@@ -202,6 +209,8 @@ introduced, and tombstones are not discarded by a timer.
 
 An isolated Release candidate in `build/p2p-candidate/` passed all 32 suites in
 19.38 seconds, including the pure child-wait and controlled party lifecycle tests.
+Its sources are checkpoint `d0b4f59`; the later POSIX-only prelaunch guard does
+not change Windows code and was not deployed in either DLL.
 Candidate DLL SHA-256:
 `bc172ccc8beddf8f2045d4420407a660ce4484de12a3f456ab037c7663f110e1`.
 The human-operated game's `build/p2p/orbisteamworks.dll` remains at `bd3f69...`
