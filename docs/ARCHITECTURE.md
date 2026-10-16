@@ -137,6 +137,26 @@ owns bounded copied payloads and message framing; `src/steam` owns native lobby
 chat calls and callback decoding. Metadata stays under the observed aggregate
 limit. The transport is for platform data only and does not replace game UDP.
 
+The unchanged `blob/1` format carries 2,000 hexadecimal characters (1,000 binary
+bytes) per chunk within a 4,096-byte lobby-message frame. A receiver requests up
+to four aligned chunks beyond its contiguous prefix. Responses may arrive out
+of order; only offsets successfully requested from the current owner, with the
+matching recipient, nonce and content hash, can enter the bounded reorder buffer.
+The window holds at most four attempted or buffered chunks per copy (at most
+8,000 additional encoded bytes). Two simultaneous image/data copies therefore
+issue at most eight requests before progress or retries. Failed sends retain a
+one-second retry backoff but do not create response authorization; a failed retry
+does not revoke an earlier successful request. The 20-second transfer deadline,
+200-response-per-second owner limit, 2 MiB encoded-copy limit and 16 MiB copied
+payload budget are unchanged. Leaving a lobby erases pending transfers.
+
+Legacy owners already answer each aligned offset independently, and legacy
+sequential receivers still receive the same responses. No new protocol field,
+capability, host setting or publisher behavior is required. The Lab backend uses
+this same protocol through simulated lobby events; it does not place large blob
+contents directly in its shared lobby metadata. These events are separate from
+the P2P datagram/control-channel counters.
+
 On the receiving side:
 
 ```text

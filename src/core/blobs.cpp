@@ -4,6 +4,7 @@
 namespace osw::core {
 namespace {
 constexpr size_t max_copy = 2 * 1024 * 1024, max_total = 16 * 1024 * 1024, chunk = 2000;
+constexpr size_t window = 4;
 bool valid_key(const std::string &key) { return key == "session-image" || key == "session-data"; }
 bool encoded(const std::string &bytes) {
     return bytes.size() % 2 == 0 && std::all_of(bytes.begin(), bytes.end(), [](char c) {
@@ -44,14 +45,28 @@ bool Blobs::install(Id lobby, const std::string &key, const std::string &bytes) 
     return true;
 }
 void Blobs::request(const std::pair<Id, std::string> &key, Copy &copy) {
-    Json packet{{"osw", "blob/1"},
-                {"kind", "get"},
-                {"key", key.second},
-                {"hash", copy.hash},
-                {"nonce", std::to_string(copy.nonce)},
-                {"offset", copy.bytes.size()}};
-    social.send_message(key.first, packet.dump());
-    copy.retry = Clock::now() + std::chrono::seconds(1);
+    const auto now = Clock::now();
+    copy.retry = now + std::chrono::seconds(1);
+    // Keep blob/1's fixed offsets and chunk size. Existing owners already serve
+    // each offset independently; at most four chunks may be outstanding or
+    // buffered beyond the contiguous prefix, even if replies arrive out of order.
+    for (size_t offset = copy.bytes.size();
+         offset < copy.size && offset < copy.bytes.size() + window * chunk; offset += chunk) {
+        if (copy.buffered.contains(offset))
+            continue;
+        auto [attempt, inserted] = copy.requested.try_emplace(offset);
+        if (inserted || now >= attempt->second.retry) {
+            Json packet{{"osw", "blob/1"},
+                        {"kind", "get"},
+                        {"key", key.second},
+                        {"hash", copy.hash},
+                        {"nonce", std::to_string(copy.nonce)},
+                        {"offset", offset}};
+            attempt->second.authorized |= social.send_message(key.first, packet.dump());
+            attempt->second.retry = now + std::chrono::seconds(1);
+        }
+        copy.retry = std::min(copy.retry, attempt->second.retry);
+    }
 }
 int Blobs::ensure(Id lobby, const Json &references) {
     if (!references.is_object() || references.size() > 2)
@@ -133,12 +148,22 @@ void Blobs::message(const SocialEvent &event) {
         if (copy.complete || copy.failed || event.user != copy.source ||
             event.user != social.owner(event.lobby) ||
             string(packet, "to") != std::to_string(self) || serial != std::to_string(copy.nonce) ||
-            offset != copy.bytes.size())
+            offset < copy.bytes.size() || offset >= copy.size || offset % chunk ||
+            !copy.requested.contains(static_cast<size_t>(offset)) ||
+            !copy.requested.at(static_cast<size_t>(offset)).authorized)
             return;
         const auto bytes = string(packet, "bytes");
-        if (bytes.size() != std::min(chunk, copy.size - copy.bytes.size()) || !encoded(bytes))
+        if (bytes.size() != std::min(chunk, copy.size - static_cast<size_t>(offset)) || !encoded(bytes))
             return;
-        copy.bytes += bytes;
+        copy.requested.erase(static_cast<size_t>(offset));
+        copy.buffered.emplace(static_cast<size_t>(offset), bytes);
+        for (;;) {
+            const auto next = copy.buffered.find(copy.bytes.size());
+            if (next == copy.buffered.end())
+                break;
+            copy.bytes += next->second;
+            copy.buffered.erase(next);
+        }
         if (copy.bytes.size() == copy.size) {
             copy.complete = checksum(copy.bytes) == copy.hash;
             copy.failed = !copy.complete;

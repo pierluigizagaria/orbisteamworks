@@ -28,6 +28,12 @@ class Blobs {
         Id source = 0, nonce = 0;
         bool complete = false, failed = false;
         Clock::time_point deadline, retry;
+        struct Attempt {
+            Clock::time_point retry;
+            bool authorized = false;
+        };
+        std::map<size_t, Attempt> requested;
+        std::map<size_t, std::string> buffered;
     };
     Social &social;
     Id self, nonce = 0;

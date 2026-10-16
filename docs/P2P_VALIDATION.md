@@ -461,3 +461,61 @@ Private evidence: `out/lab-idle-probe.log`, `out/lab-read-verified-before.log`,
 old-binary-only `--expect-failure`. These are
 standalone library fixtures; no actual publisher, game or Steam process is
 required by them. No active game or installed DLL was changed by these checks.
+
+## Bounded platform blob request window (2026-10-16)
+
+The user subsequently reported that the original-game Lab invitation, private
+match and complete race succeeded with library source `4ab63f2`/DLL
+`103a115e...`, native source `cd41018` and publisher source `112e884`. This is
+human-reported original-game Lab acceptance of that artifact set. It does not
+qualify two-account Steam transport or the new candidate described below.
+The remaining observation was approximately four to five seconds entering a
+lobby. The observed interval was not instrumented, so its cause is not established.
+
+Source review found a measurable serial dependency in the generic platform
+payload transfer. `Platform::save` moves immutable image/data values larger than
+1,024 hexadecimal characters into private owner blob storage, leaving references
+in the lobby document. `Platform::process` waits for those copies before completing
+acceptance. Both Lab and Steam use the same `blob/1` messages; Lab does not bypass
+this exchange through shared metadata. These lobby events do not contribute to
+P2P `network_received`, and an internal prefetch does not appear as a large host
+WebAPI GET response. Fresh host logs expose only response sizes, not the actual
+blob size or transfer duration. Nothing was read from the active Lab hub.
+
+A small in-memory `Social` fixture compared the prior source and the candidate
+with the same MSVC options, synthetic 52,096-byte image, and explicit 20 ms sleep
+per simulated hop. Three sequential runs took 3,294–3,304 ms; three four-request
+window runs took 859–874 ms. Both exchanged exactly 53 requests and 53 responses
+with identical final bytes; dependency rounds fell from 53 to 14 and the largest
+request batch rose from one to four. This is a controlled, modeled-cadence fixture,
+not measured Lab file-backend latency, Steam latency or a game loading benchmark.
+The private harness and output are `out/blob-window-bench/bench.cpp` and
+`out/blob-window-bench/comparison.log`. Prior source copies used for comparison
+remain private in that same ignored directory.
+
+The production change preserves the fixed 2,000-character chunks, 4,096-byte
+frames and `blob/1` schema. It bounds attempted/buffered offsets to four per copy,
+accepts only successfully requested offsets, and reassembles a contiguous prefix.
+Existing sequential receivers and independent-offset owners remain compatible.
+Focused regressions cover reverse delivery, duplicates, missing chunks, forged
+senders/recipients/nonces, unaligned or unrequested offsets, invalid sizes,
+leave/late replies, owner change and final hash failure. They also check first
+send failure, failed retransmission backoff, recovery, the unchanged 200-response
+owner rate limit, and concurrent 120,000-byte image/data copies with a lost reply.
+That concurrent test uses the existing 20-second transfer bound; the 30-second
+CTest bound applies only to the test process. No session lifetime changed.
+
+An isolated static/shared build in `build/blob-window-candidate/` completed with
+two build jobs. `platform-contracts`, `blob-window-contracts` and `shared-load`
+passed together in 5.07 seconds. A review finding in the first iteration was
+fixed before that run: failed retransmissions must advance the retry deadline
+without authorizing a first failed send. The new fixture verifies this behavior.
+The broader unchanged suite was not repeated for this focused core change.
+Private build evidence: `out/blob-window-candidate-final-build.log`; the final
+test-only deadline adjustment is recorded in `out/blob-window-final-regression.log`.
+Candidate DLL SHA-256:
+`8c9157a32f9faf396fdac0ba5a7b19d271e4eaf8880936f07f4939b6b026a1f4`.
+No installed DLL, profile, live game, publisher process or Steam session was
+changed by the library work. Actual consumer checks and a human game retest are
+separate; this result does not establish how much of the reported lobby wait
+the transfer accounts for.
