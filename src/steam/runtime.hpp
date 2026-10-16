@@ -46,6 +46,13 @@ class Runtime : public core::Social {
     bool try_start_client();
     void start_server();
     bool start_social();
+    bool start_p2p();
+    std::uint64_t create_room(int limit) override;
+    std::uint64_t search_rooms(const std::map<std::string, std::string> &filters,
+                               int distance) override;
+    bool send_peer(std::uint64_t peer, int channel, const std::string &bytes) override;
+    std::vector<core::PeerMessage> take_peer_messages() override;
+    void allow_peers(const std::vector<std::uint64_t> &peers) override;
     std::vector<core::SocialEvent> take_social_events();
     std::vector<core::Friend> friends() override;
     std::string persona();

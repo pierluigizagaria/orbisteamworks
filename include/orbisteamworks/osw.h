@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #define OSW_ABI_VERSION 1u
+#define OSW_ABI_VERSION_2 2u
 typedef struct osw_context osw_context;
 enum osw_status {
     OSW_OK = 0,
@@ -28,7 +29,8 @@ enum osw_operation {
     OSW_INVITE_SEND = 4,
     OSW_INVITE_ACCEPT = 5,
     OSW_INVITE_DECLINE = 6,
-    OSW_RESOLVE_NAME = 7
+    OSW_RESOLVE_NAME = 7,
+    OSW_P2P = 8
 };
 enum osw_event_type {
     OSW_IDENTITY_CHANGED = 1,
@@ -49,6 +51,21 @@ typedef struct osw_config {
     char realm[65];
 } osw_config;
 
+/* Explicit opt-in extension. ABI 1 and osw_create retain their exact layout.
+ * Strings are UTF-8. companion_environment is a JSON object of env strings.
+ * Lab mode is a simulation, never a fallback for unavailable Steam. */
+typedef struct osw_config_v2 {
+    osw_config base;    /* base.size = sizeof(osw_config_v2), base.abi_version = 2 */
+    uint32_t backend;   /* 0 = Steam, 1 = simulated local lab */
+    uint32_t game_port; /* 1..65535, normally 3074 */
+    uint64_t lab_account_id;
+    char lab_root[1024];
+    char companion_path[1024];
+    char companion_working_dir[1024];
+    char companion_environment[8192];
+    char game_bind[16]; /* exact IPv4 loopback address; no wildcard */
+} osw_config_v2;
+
 typedef struct osw_identity {
     uint32_t size;
     int32_t signed_in, reason_code;
@@ -58,7 +75,8 @@ typedef struct osw_identity {
 } osw_identity;
 
 /* Metadata is UTF-8 JSON. The body is opaque binary. Both are copied on entry.
- * Operation schemas are documented in docs/C_API.md. No credential is logged. */
+ * Operation schemas are documented in docs/C_API.md. No credential is logged.
+ */
 typedef struct osw_request {
     uint32_t size, operation, timeout_ms;
     const char *metadata;
@@ -86,6 +104,7 @@ typedef struct osw_event {
 } osw_event;
 
 int32_t osw_create(const osw_config *config, osw_context **output);
+int32_t osw_create_v2(const osw_config_v2 *config, osw_context **output);
 int32_t osw_start(osw_context *context);
 int32_t osw_get_identity(osw_context *context, osw_identity *output);
 int32_t osw_submit(osw_context *context, const osw_request *request, uint64_t *request_id);

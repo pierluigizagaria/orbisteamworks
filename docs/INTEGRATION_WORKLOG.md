@@ -1,5 +1,18 @@
 # Steam integration work log
 
+## Native P2P library extension, 2026-10-16
+
+The user authorized the native-first design in P2P_DESIGN.md. ABI 2, the owned
+hidden companion, invisible room directory, authenticated peer channels,
+per-peer loopback proxy and explicitly simulated multi-process lab backend are
+implemented on `feat/native-p2p`. ABI 1 and central Steam admission remain
+available. The detailed implementation/validation record and pending two-PC
+procedure are in [P2P_VALIDATION.md](P2P_VALIDATION.md). Its evidence must not be
+merged with the historical shadPS4 acceptance below or presented as native-game
+or two-account Steam acceptance.
+
+## Historical shadPS4 integration record
+
 Updated: 2026-10-15. The user expanded the task from gate 1 to the complete
 shadPS4 and Demonware integration, including friends, invitations and playable
 multiplayer. MIT was selected for orbiSteamworks. Changes remain local and

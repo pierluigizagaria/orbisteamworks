@@ -3,10 +3,16 @@
 2026-10-16. Replacement contract (I). UTF-8 newline-delimited JSON on inherited
 stdin/stdout. A frame is at most 98,304 bytes including newline; queues are
 bounded. Logs use stderr and never contain tokens, peer payloads or private IDs.
+On Windows stderr is discarded by default; the environment map may explicitly
+set `OSW_COMPANION_STDERR` to a private UTF-8 log-file path for diagnostics.
 All account/lobby/request IDs are decimal strings, except correlation `id`,
 which is an opaque nonempty string of at most 64 bytes. Every frame has `v:1`.
 Unknown operations fail closed. The child exits on stdin EOF; the parent owns
 the child in a Windows kill-on-close Job Object. No session-idle timeout exists.
+The library sets generic child `OSW_COMPANION_PROTOCOL=1`. Provider-specific
+settings belong in the caller's environment map; for the CTR publisher these
+include `CTR_COMPANION=stdio`, `CTR_ADMISSION=local` and
+`CTR_MATCHMAKING=steam`. The library does not interpret these settings.
 
 Parent first sends `{v:1,event:"owner",steam_id,online_id,token,title,build,realm,
 backend:"steam"|"lab"}`. The child must receive this within ten seconds.
@@ -28,12 +34,20 @@ Requests complete within 25 seconds; the child should allow 30 seconds.
 | directory.join | `room_id` | room record |
 | directory.leave | `room_id` | empty object |
 | directory.update | `room_id`, `metadata` object | room record |
+| directory.members | `room_id` | current room record |
 | peer.send | `room_id`, `peer`, `payload` standard padded base64 | empty object |
 | peer.endpoint | `room_id`, `peer` | `address` IPv4 loopback text, `port` uint16 |
 | name.resolve | `peer` | `online_id` or an explicit unavailable error |
+| name.lookup | `names` array, at most 500 online IDs | `players:[{steam_id,online_id}]`, at most 100 current in-game friends |
+| advertisement.set | `context` ASCII namespace <=32 bytes, `payload` base64 <=4096 decoded bytes; empty clears | empty object |
+| advertisement.get | `peer`, `context` | `payload` from that friend's private advertisement, or explicit not-found |
 | status | none | `ready`, `backend` |
 
 A room record is `{room_id,owner,members:[decimal ID strings],metadata:{...}}`.
+Search results for rooms not yet joined have an empty `members` array and use
+the advertised owner. Steam permits actual owner/member queries only after
+joining. Join completion verifies the actual owner against that advertised owner
+before the record is accepted; joined records contain the actual members.
 Metadata is public: only `playlist`, `type`, `free_slots` scalar strings/numbers
 are accepted, <=256 encoded bytes. Library-added namespace fields are
 `osw/1`, title, build, realm, room protocol `1`; they cannot be overridden.
@@ -51,17 +65,47 @@ that remote peer. Incoming peer race packets are sent FROM that socket TO the
 configured local `game_bind:game_port`. Only datagrams from that exact game
 endpoint are sent to the corresponding remote peer. No network-facing proxy
 socket is opened.
+The simulated UDP carrier reserves another 20 bytes for its local headers and
+therefore accepts game datagrams up to 65,487 bytes; gameplay packets tested so
+far are much smaller. This is a lab transport limit, not a Steam measurement.
 
 Unsolicited parent events:
 
 - `{v:1,event:"peer.message",room_id,sender,payload}`.
 - `{v:1,event:"room.changed",room_id,owner,members:[...]}` on membership change.
 - `{v:1,event:"room.closed",room_id}` on invalid namespace or lost membership.
+- `{v:1,event:"room.selected",room_id,owner,members,metadata}` after a committed
+  platform-party follower joins the leader's selected room.
 - `{v:1,event:"error",error:"code"}` on a transport failure.
 
 The child must invalidate remote peers on departure/closed events. The engine
 does not migrate automatically if its owner leaves. The library never forwards
 generic publisher requests: only the child defines the narrower room protocol.
+
+The platform-party owner publishes its selected invisible room in member-only
+party data. Only members whose game has committed platform membership follow
+that selection; provisional invitation joins do not qualify. Create/join waits
+within its existing deadline for the committed followers to join. Owner change
+closes the room, rather than migrating its publisher engine silently.
+Timeout or cancellation rolls back the introduced room membership and selection.
+
+Private advertisements use dedicated reliable channel 49 with an exact
+protocol/title/build/realm envelope. Only current in-game friends are accepted.
+Eligibility refreshes on friend changes and before local friend operations.
+Read-only queries retry the same correlation ID every 500 ms within five seconds;
+room mutations are never automatically replayed. Steam session requests wait
+for refreshed authorization, and a failed session is reset for a later attempt.
+The only operations are query and correlated reply; peers cannot write another
+player's advertisement. `peer.endpoint` also accepts `{peer,scope:"friend"}`
+before room membership, enabling the game's friend-advertisement address fields.
+This explicitly allocated endpoint accepts only race datagrams from that current
+in-game friend; room messages still require room membership. The publisher
+chooses an allow-listed advertisement context and never exports local economy.
+When those peers join a common room, the same socket automatically uses that
+room's envelope. This preserves addresses already returned by friend queries
+and permits the follower's first race packet before a reverse proxy exists.
+An explicitly friend-scoped socket can return to friend scope after room leave;
+a room-only socket is removed when its membership ends.
 
 The same operations are available to diagnostic hosts through `OSW_P2P` (8):
 metadata is the request object; result metadata is the reply result or error.

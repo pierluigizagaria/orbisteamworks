@@ -1,5 +1,20 @@
 # Architecture
 
+Native P2P addendum, 2026-10-16: [P2P_DESIGN.md](P2P_DESIGN.md) supersedes the
+native deferral and unchanged-matchmaking statements in the historical revision
+below. ABI 2 keeps the ABI 1 layout and exports, adding explicit Steam/lab backend
+selection, loopback game endpoint and hidden companion configuration. The
+companion uses [COMPANION_PROTOCOL.md](COMPANION_PROTOCOL.md); it owns publisher
+rules and local data, while the library owns identity, directory and transport.
+
+`src/core/p2p.*` implements the bounded directory/peer protocol and per-peer UDP
+proxies; `src/core/local_io.*` owns child pipes, Windows Job Object and loopback
+sockets. `src/lab/` is an explicitly simulated multi-process file-backed hub with
+local UDP, not a substitute for Steam validation. `src/steam/` alone declares and
+calls the SDK subset for invisible lobbies and Networking Messages. No publisher
+or native-host implementation is copied into the library. See
+[P2P_VALIDATION.md](P2P_VALIDATION.md) for evidence and remaining acceptance.
+
 Updated: 2026-10-15, revision 3 with PoC implementation notes. The runtime Steam
 loader, C API, initial session/friend core, shadPS4 adapter and publisher helper
 integration are implemented locally. See INTEGRATION_WORKLOG.md for measured

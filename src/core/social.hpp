@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -18,12 +19,23 @@ struct SocialEvent {
         invitation,
         join_requested,
         friends_changed,
-        message
+        message,
+        listed
     } kind;
     std::uint64_t call = 0, lobby = 0, user = 0;
     bool success = false;
     int detail = 0;
     std::string payload;
+    std::vector<std::uint64_t> lobbies;
+};
+struct PeerMessage {
+    std::uint64_t sender = 0;
+    int channel = 0;
+    std::string bytes;
+};
+struct Party {
+    std::uint64_t lobby = 0, owner = 0;
+    std::vector<std::uint64_t> members;
 };
 class Social {
   public:
@@ -50,5 +62,12 @@ class Social {
     virtual bool set_limit(std::uint64_t lobby, int limit) = 0;
     virtual bool set_friends_visible(std::uint64_t lobby, bool visible) = 0;
     virtual bool send_message(std::uint64_t lobby, const std::string &bytes) = 0;
+    virtual std::uint64_t create_room(int) { return 0; }
+    virtual std::uint64_t search_rooms(const std::map<std::string, std::string> &, int) {
+        return 0;
+    }
+    virtual bool send_peer(std::uint64_t, int, const std::string &) { return false; }
+    virtual std::vector<PeerMessage> take_peer_messages() { return {}; }
+    virtual void allow_peers(const std::vector<std::uint64_t> &) {}
 };
 } // namespace osw::core

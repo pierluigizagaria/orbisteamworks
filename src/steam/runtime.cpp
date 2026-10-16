@@ -1,6 +1,7 @@
 #include "steam/runtime.hpp"
 #include "steam/flat.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -107,6 +108,17 @@ struct Runtime::Impl {
     std::map<std::uint64_t, int> calls;
     std::vector<core::SocialEvent> social_events;
     std::set<std::uint64_t> presence_requested;
+    void *networking = nullptr;
+    flat::LobbyFilterString filter_string = nullptr;
+    flat::InterfaceInt filter_distance = nullptr, filter_slots = nullptr, filter_count = nullptr;
+    flat::LobbySearch lobby_search = nullptr;
+    flat::LobbyIndex lobby_index = nullptr;
+    flat::NetworkSend network_send = nullptr;
+    flat::NetworkReceive network_receive = nullptr;
+    flat::NetworkSession network_accept = nullptr, network_close = nullptr;
+    flat::NetworkRelease network_release = nullptr;
+    std::set<std::uint64_t> allowed_peers;
+    std::set<std::uint64_t> pending_peer_requests;
 
     template <class T> T find_symbol(const char *name) {
         if (error)
@@ -167,7 +179,8 @@ Runtime::Runtime(const std::filesystem::path &library, Checked) : p(std::make_un
     }
     p->path = std::filesystem::absolute(path, error);
     if (error || !std::filesystem::is_regular_file(p->path, error)) {
-        p->error.emplace(ErrorCode::library_missing, "Steam API library is missing or inaccessible");
+        p->error.emplace(ErrorCode::library_missing,
+                         "Steam API library is missing or inaccessible");
         return;
     }
 #ifdef _WIN32
@@ -184,7 +197,8 @@ Runtime::Runtime(const std::filesystem::path &library, Checked) : p(std::make_un
     p->dispatch_init = p->find_symbol<flat::Void>("SteamAPI_ManualDispatch_Init");
     p->frame = p->find_symbol<flat::RunFrame>("SteamAPI_ManualDispatch_RunFrame");
     p->next = p->find_symbol<flat::NextCallback>("SteamAPI_ManualDispatch_GetNextCallback");
-    p->free_callback = p->find_symbol<flat::FreeCallback>("SteamAPI_ManualDispatch_FreeLastCallback");
+    p->free_callback =
+        p->find_symbol<flat::FreeCallback>("SteamAPI_ManualDispatch_FreeLastCallback");
 }
 Runtime::Runtime(const std::filesystem::path &library) : Runtime(library, Checked{}) {
     if (p->error)
@@ -226,10 +240,10 @@ bool Runtime::try_start_client() {
     int result = init(&detail);
     // Do not forward opaque SDK messages: they can contain machine/account data.
     if (result != 0) {
-        p->error.emplace(
-            ErrorCode::client_unavailable,
-            "Steam client unavailable or incompatible; start Steam and sign in. Init result=" +
-                std::to_string(result));
+        p->error.emplace(ErrorCode::client_unavailable,
+                         "Steam client unavailable or incompatible; start Steam "
+                         "and sign in. Init result=" +
+                             std::to_string(result));
         return false;
     }
     p->mode = Impl::Mode::client;
@@ -306,13 +320,18 @@ bool Runtime::start_social() {
         p->error.emplace(ErrorCode::symbol_missing, "Steam social interfaces unavailable");
         return false;
     }
-    p->call_result = p->find_symbol<flat::GetCallResult>("SteamAPI_ManualDispatch_GetAPICallResult");
+    p->call_result =
+        p->find_symbol<flat::GetCallResult>("SteamAPI_ManualDispatch_GetAPICallResult");
     p->friend_count = p->find_symbol<flat::FriendCount>("SteamAPI_ISteamFriends_GetFriendCount");
-    p->friend_by_index = p->find_symbol<flat::FriendByIndex>("SteamAPI_ISteamFriends_GetFriendByIndex");
-    p->friend_state = p->find_symbol<flat::FriendState>("SteamAPI_ISteamFriends_GetFriendPersonaState");
-    p->friend_name = p->find_symbol<flat::FriendName>("SteamAPI_ISteamFriends_GetFriendPersonaName");
+    p->friend_by_index =
+        p->find_symbol<flat::FriendByIndex>("SteamAPI_ISteamFriends_GetFriendByIndex");
+    p->friend_state =
+        p->find_symbol<flat::FriendState>("SteamAPI_ISteamFriends_GetFriendPersonaState");
+    p->friend_name =
+        p->find_symbol<flat::FriendName>("SteamAPI_ISteamFriends_GetFriendPersonaName");
     p->persona_name = p->find_symbol<flat::PersonaName>("SteamAPI_ISteamFriends_GetPersonaName");
-    p->get_presence = p->find_symbol<flat::GetPresence>("SteamAPI_ISteamFriends_GetFriendRichPresence");
+    p->get_presence =
+        p->find_symbol<flat::GetPresence>("SteamAPI_ISteamFriends_GetFriendRichPresence");
     p->set_presence = p->find_symbol<flat::SetPresence>("SteamAPI_ISteamFriends_SetRichPresence");
     p->request_presence =
         p->find_symbol<flat::RequestPresence>("SteamAPI_ISteamFriends_RequestFriendRichPresence");
@@ -320,22 +339,29 @@ bool Runtime::start_social() {
     p->join_lobby = p->find_symbol<flat::JoinLobby>("SteamAPI_ISteamMatchmaking_JoinLobby");
     p->leave_lobby = p->find_symbol<flat::LobbyVoid>("SteamAPI_ISteamMatchmaking_LeaveLobby");
     p->invite = p->find_symbol<flat::Invite>("SteamAPI_ISteamMatchmaking_InviteUserToLobby");
-    p->request_data = p->find_symbol<flat::LobbyBool>("SteamAPI_ISteamMatchmaking_RequestLobbyData");
+    p->request_data =
+        p->find_symbol<flat::LobbyBool>("SteamAPI_ISteamMatchmaking_RequestLobbyData");
     p->lobby_data = p->find_symbol<flat::LobbyString>("SteamAPI_ISteamMatchmaking_GetLobbyData");
     p->set_lobby_data = p->find_symbol<flat::LobbySet>("SteamAPI_ISteamMatchmaking_SetLobbyData");
     p->delete_lobby_data =
         p->find_symbol<flat::LobbyDelete>("SteamAPI_ISteamMatchmaking_DeleteLobbyData");
     p->owner = p->find_symbol<flat::LobbyOwner>("SteamAPI_ISteamMatchmaking_GetLobbyOwner");
-    p->member_count = p->find_symbol<flat::MemberCount>("SteamAPI_ISteamMatchmaking_GetNumLobbyMembers");
+    p->member_count =
+        p->find_symbol<flat::MemberCount>("SteamAPI_ISteamMatchmaking_GetNumLobbyMembers");
     p->member_by_index =
         p->find_symbol<flat::MemberByIndex>("SteamAPI_ISteamMatchmaking_GetLobbyMemberByIndex");
-    p->member_data = p->find_symbol<flat::MemberString>("SteamAPI_ISteamMatchmaking_GetLobbyMemberData");
+    p->member_data =
+        p->find_symbol<flat::MemberString>("SteamAPI_ISteamMatchmaking_GetLobbyMemberData");
     p->set_member_data =
         p->find_symbol<flat::MemberSet>("SteamAPI_ISteamMatchmaking_SetLobbyMemberData");
-    p->set_joinable = p->find_symbol<flat::LobbyJoinable>("SteamAPI_ISteamMatchmaking_SetLobbyJoinable");
-    p->set_limit = p->find_symbol<flat::LobbyLimit>("SteamAPI_ISteamMatchmaking_SetLobbyMemberLimit");
-    p->send_message = p->find_symbol<flat::LobbySend>("SteamAPI_ISteamMatchmaking_SendLobbyChatMsg");
-    p->read_message = p->find_symbol<flat::LobbyRead>("SteamAPI_ISteamMatchmaking_GetLobbyChatEntry");
+    p->set_joinable =
+        p->find_symbol<flat::LobbyJoinable>("SteamAPI_ISteamMatchmaking_SetLobbyJoinable");
+    p->set_limit =
+        p->find_symbol<flat::LobbyLimit>("SteamAPI_ISteamMatchmaking_SetLobbyMemberLimit");
+    p->send_message =
+        p->find_symbol<flat::LobbySend>("SteamAPI_ISteamMatchmaking_SendLobbyChatMsg");
+    p->read_message =
+        p->find_symbol<flat::LobbyRead>("SteamAPI_ISteamMatchmaking_GetLobbyChatEntry");
     p->set_type = p->find_symbol<flat::LobbyLimit>("SteamAPI_ISteamMatchmaking_SetLobbyType");
     return !p->error;
 }
@@ -356,6 +382,136 @@ std::vector<core::Friend> Runtime::friends() {
             p->request_presence(p->friends_api, user);
     }
     return result;
+}
+bool Runtime::start_p2p() {
+    auto utilities =
+        p->find_symbol<flat::GetInterface>("SteamAPI_SteamNetworkingUtils_SteamAPI_v004");
+    auto init_relay = p->find_symbol<flat::InterfaceVoid>(
+        "SteamAPI_ISteamNetworkingUtils_InitRelayNetworkAccess");
+    auto get = p->find_symbol<flat::GetInterface>("SteamAPI_SteamNetworkingMessages_SteamAPI_v002");
+    p->filter_string = p->find_symbol<flat::LobbyFilterString>(
+        "SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter");
+    p->filter_distance = p->find_symbol<flat::InterfaceInt>(
+        "SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter");
+    p->filter_slots = p->find_symbol<flat::InterfaceInt>(
+        "SteamAPI_ISteamMatchmaking_AddRequestLobbyListFilterSlotsAvailable");
+    p->filter_count = p->find_symbol<flat::InterfaceInt>(
+        "SteamAPI_ISteamMatchmaking_AddRequestLobbyListResultCountFilter");
+    p->lobby_search =
+        p->find_symbol<flat::LobbySearch>("SteamAPI_ISteamMatchmaking_RequestLobbyList");
+    p->lobby_index = p->find_symbol<flat::LobbyIndex>("SteamAPI_ISteamMatchmaking_GetLobbyByIndex");
+    p->network_send =
+        p->find_symbol<flat::NetworkSend>("SteamAPI_ISteamNetworkingMessages_SendMessageToUser");
+    p->network_receive = p->find_symbol<flat::NetworkReceive>(
+        "SteamAPI_ISteamNetworkingMessages_ReceiveMessagesOnChannel");
+    p->network_accept = p->find_symbol<flat::NetworkSession>(
+        "SteamAPI_ISteamNetworkingMessages_AcceptSessionWithUser");
+    p->network_close = p->find_symbol<flat::NetworkSession>(
+        "SteamAPI_ISteamNetworkingMessages_CloseSessionWithUser");
+    p->network_release =
+        p->find_symbol<flat::NetworkRelease>("SteamAPI_SteamNetworkingMessage_t_Release");
+    if (p->error)
+        return false;
+    p->networking = get();
+    if (!p->networking) {
+        p->error.emplace(ErrorCode::symbol_missing, "Steam networking interface unavailable");
+        return false;
+    }
+    auto utils = utilities();
+    if (!utils) {
+        p->error.emplace(ErrorCode::symbol_missing, "Steam networking utilities unavailable");
+        return false;
+    }
+    init_relay(utils);
+    return true;
+}
+std::uint64_t Runtime::create_room(int limit) {
+    if (!p->networking || p->calls.size() >= 128)
+        return 0;
+    auto call = p->create_lobby(p->matchmaking, 3, limit);
+    if (call)
+        p->calls[call] = flat::lobby_created;
+    return call;
+}
+std::uint64_t Runtime::search_rooms(const std::map<std::string, std::string> &filters,
+                                    int distance) {
+    if (!p->networking || p->calls.size() >= 128 ||
+        std::any_of(p->calls.begin(), p->calls.end(),
+                    [](auto &value) { return value.second == flat::lobby_list; }))
+        return 0;
+    for (auto &[key, value] : filters)
+        p->filter_string(p->matchmaking, key.c_str(), value.c_str(), 0);
+    p->filter_distance(p->matchmaking, distance);
+    p->filter_slots(p->matchmaking, 1);
+    p->filter_count(p->matchmaking, 32);
+    auto call = p->lobby_search(p->matchmaking);
+    if (call)
+        p->calls[call] = flat::lobby_list;
+    return call;
+}
+bool Runtime::send_peer(std::uint64_t peer, int channel, const std::string &bytes) {
+    if (!p->networking || !p->allowed_peers.contains(peer) || bytes.size() > 65519 ||
+        (channel != 47 && channel != 48 && channel != 49))
+        return false;
+    flat::Identity identity{};
+    identity.type = 16;
+    identity.size = 8;
+    identity.steam_id = peer;
+    auto result = p->network_send(p->networking, &identity, bytes.data(),
+                                  (std::uint32_t)bytes.size(), channel == 48 ? 1 : 9, channel);
+    if (result == 3) // NoConnection: reset a broken session, but do not replay the command.
+        p->network_close(p->networking, &identity);
+    return result == 1;
+}
+std::vector<core::PeerMessage> Runtime::take_peer_messages() {
+    std::vector<core::PeerMessage> out;
+    if (!p->networking)
+        return out;
+    for (int channel : {47, 48, 49}) {
+        flat::NetworkingMessage *messages[128]{};
+        int count = p->network_receive(p->networking, channel, messages, 128);
+        if (count < 0 || count > 128) {
+            p->error.emplace(ErrorCode::callback_abi, "Invalid networking message count");
+            return {};
+        }
+        for (int i = 0; i < count; ++i) {
+            auto *message = messages[i];
+            if (!message)
+                continue;
+            if (message->peer.type == 16 && message->peer.size == 8 &&
+                p->allowed_peers.contains(message->peer.steam_id) && message->channel == channel &&
+                message->size >= 0 && message->size <= 65519 && message->data)
+                out.push_back({message->peer.steam_id, channel,
+                               std::string((char *)message->data, message->size)});
+            p->network_release(message);
+        }
+    }
+    return out;
+}
+void Runtime::allow_peers(const std::vector<std::uint64_t> &peers) {
+    if (!p->networking)
+        return;
+    std::set<std::uint64_t> next(peers.begin(), peers.end());
+    for (auto peer : p->allowed_peers)
+        if (!next.contains(peer)) {
+            flat::Identity identity{};
+            identity.type = 16;
+            identity.size = 8;
+            identity.steam_id = peer;
+            p->network_close(p->networking, &identity);
+        }
+    p->allowed_peers = std::move(next);
+    for (auto peer : p->pending_peer_requests) {
+        flat::Identity identity{};
+        identity.type = 16;
+        identity.size = 8;
+        identity.steam_id = peer;
+        if (p->allowed_peers.contains(peer))
+            p->network_accept(p->networking, &identity);
+        else
+            p->network_close(p->networking, &identity);
+    }
+    p->pending_peer_requests.clear();
 }
 std::string Runtime::persona() {
     auto name = p->persona_name(p->friends_api);
@@ -542,6 +698,18 @@ std::vector<Event> Runtime::try_poll() {
                                             !ok      ? -1
                                             : failed ? -2
                                                      : value.result});
+            } else if (it->second == flat::lobby_list) {
+                flat::LobbyList value{};
+                const bool ok = completed.callback == it->second &&
+                                completed.size == sizeof(value) &&
+                                p->call_result(p->pipe, completed.call, &value, sizeof(value),
+                                               it->second, &failed);
+                core::SocialEvent event{core::SocialEvent::listed, completed.call, 0, 0,
+                                        ok && !failed && value.count <= 32};
+                if (event.success)
+                    for (std::uint32_t index = 0; index < value.count; ++index)
+                        event.lobbies.push_back(p->lobby_index(p->matchmaking, (int)index));
+                p->social_events.push_back(std::move(event));
             } else {
                 flat::LobbyEnter value{};
                 const bool ok = completed.callback == it->second &&
@@ -565,6 +733,21 @@ std::vector<Event> Runtime::try_poll() {
                 return {};
             p->social_events.push_back(
                 {core::SocialEvent::data, 0, value.lobby, value.member, value.success != 0});
+            break;
+        }
+        case flat::networking_session_request: {
+            if (!p->networking)
+                break;
+            auto identity = payload<flat::Identity>(cb, p->error);
+            if (p->error)
+                return {};
+            if (identity.type == 16 && identity.size == 8 && identity.steam_id &&
+                p->pending_peer_requests.size() < 128) {
+                // Core refreshes friend/room eligibility before allow_peers decides this batch.
+                p->pending_peer_requests.insert(identity.steam_id);
+                p->social_events.push_back({core::SocialEvent::friends_changed});
+            } else
+                p->network_close(p->networking, &identity);
             break;
         }
         case flat::lobby_chat: {

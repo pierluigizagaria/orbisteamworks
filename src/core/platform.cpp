@@ -1111,6 +1111,17 @@ Update Platform::take_update() {
     std::swap(value, p->update);
     return value;
 }
+Party Platform::party() {
+    for (auto lobby : p->joined)
+        if (p->committed(lobby) && p->compatible(lobby)) {
+            Party party{lobby, p->social.owner(lobby)};
+            for (auto peer : p->social.members(lobby))
+                if (valid_online_id(p->social.member_data(lobby, peer, "osw.member")))
+                    party.members.push_back(peer);
+            return party;
+        }
+    return {};
+}
 void Platform::stop() {
     if (p->stopped)
         return;

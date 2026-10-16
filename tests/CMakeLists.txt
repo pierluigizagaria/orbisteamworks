@@ -11,12 +11,22 @@ add_executable(osw-platform-tests platform_tests.cpp)
 target_include_directories(osw-platform-tests PRIVATE ../src)
 target_link_libraries(osw-platform-tests PRIVATE orbisteamworks nlohmann_json::nlohmann_json)
 add_test(NAME platform-contracts COMMAND osw-platform-tests)
+add_executable(osw-p2p-tests p2p_tests.cpp)
+target_include_directories(osw-p2p-tests PRIVATE ../src)
+target_link_libraries(osw-p2p-tests PRIVATE orbisteamworks nlohmann_json::nlohmann_json)
+add_test(NAME p2p-cross-process-lab COMMAND osw-p2p-tests)
+set_tests_properties(p2p-cross-process-lab PROPERTIES TIMEOUT 60)
 
 # These fixtures are our own code, never Steam SDK files. They are only passed
 # through --library by offline tests; production has no simulated fallback.
 add_library(osw-test-api SHARED ../src/steam/testing/fake_api.cpp)
 target_include_directories(osw-test-api PRIVATE ../src)
 add_library(osw-test-missing-symbol SHARED missing_symbol.cpp)
+add_executable(osw-steam-p2p-tests ../src/steam/testing/p2p_tests.cpp)
+target_link_libraries(osw-steam-p2p-tests PRIVATE orbisteamworks)
+target_include_directories(osw-steam-p2p-tests PRIVATE ../src)
+add_test(NAME steam-p2p-contracts COMMAND ${CMAKE_COMMAND} -E env
+  OSW_FIXTURE_SCENARIO=p2p $<TARGET_FILE:osw-steam-p2p-tests> $<TARGET_FILE:osw-test-api>)
 function(failure_case name program library scenario code message)
   add_test(NAME ${name} COMMAND ${CMAKE_COMMAND}
     -DPROGRAM=$<TARGET_FILE:${program}> -DLIBRARY=${library}

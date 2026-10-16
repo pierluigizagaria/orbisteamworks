@@ -13,6 +13,7 @@ class Platform {
     void cancel(std::uint64_t request);
     void process(const std::vector<SocialEvent> &events);
     Update take_update();
+    Party party();
     void stop();
 
   private:

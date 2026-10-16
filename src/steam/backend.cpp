@@ -1,5 +1,6 @@
 #include "steam/backend.hpp"
 #include "core/credential.hpp"
+#include "core/p2p.hpp"
 #include "core/platform.hpp"
 #include "steam/runtime.hpp"
 #include <nlohmann/json.hpp>
@@ -19,7 +20,7 @@ class SteamBackend final : public core::Backend {
 #ifdef _WIN32
         if (!config.library_path.empty() &&
             !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, config.library_path.data(),
-                                static_cast<int>(config.library_path.size()), nullptr, 0)) {
+                                 static_cast<int>(config.library_path.size()), nullptr, 0)) {
             identity_value.reason = "Invalid UTF-8 Steam library path";
             identity_value.reason_code = static_cast<int>(ErrorCode::arguments);
             failed = true;
@@ -33,11 +34,13 @@ class SteamBackend final : public core::Backend {
             return;
         }
         const auto account = runtime->id();
-        identity_value = {true, account,
+        identity_value = {true,
+                          account,
                           config.online_id.empty()
                               ? core::online_id_from_persona(runtime->persona(), account)
                               : config.online_id,
-                          {}, 0};
+                          {},
+                          0};
         platform = std::make_unique<core::Platform>(config, identity_value, *runtime);
         if (!platform->start()) {
             stop();
@@ -45,12 +48,23 @@ class SteamBackend final : public core::Backend {
             identity_value.reason_code = static_cast<int>(ErrorCode::arguments);
             failed = true;
         }
+        if (!failed && config.p2p) {
+            if (!runtime->start_p2p()) {
+                fail_runtime();
+                return;
+            }
+            p2p = std::make_unique<core::P2P>(config, identity_value, *runtime);
+        }
         fail_runtime();
     }
     core::Identity identity() const override { return identity_value; }
     void submit(core::Request request) override {
         if (!runtime || !identity_value.signed_in) {
             finish(request.id, OSW_SIGNED_OUT);
+            return;
+        }
+        if (p2p && p2p->handles(request)) {
+            p2p->submit(std::move(request));
             return;
         }
         if (request.operation != OSW_TOKEN) {
@@ -93,6 +107,8 @@ class SteamBackend final : public core::Backend {
         pending = Pending{request.id, std::move(*ticket)};
     }
     void cancel(std::uint64_t id) override {
+        if (p2p)
+            p2p->cancel(id);
         if (platform)
             platform->cancel(id);
         if (pending && pending->id == id) {
@@ -123,8 +139,9 @@ class SteamBackend final : public core::Backend {
                     runtime->cancel_ticket(pending->ticket.handle);
                     finish(pending->id, OSW_UNAVAILABLE);
                 } else {
-                    auto token = core::try_encode_token(
-                        {identity_value.account_id, pending->ticket.bytes, identity_value.online_id});
+                    auto token =
+                        core::try_encode_token({identity_value.account_id, pending->ticket.bytes,
+                                                identity_value.online_id});
                     if (token) {
                         core::Result result{pending->id};
                         result.body.assign(token->begin(), token->end());
@@ -145,9 +162,21 @@ class SteamBackend final : public core::Backend {
         }
         core::Update update;
         if (platform && runtime) {
-            platform->process(runtime->take_social_events());
+            auto events = runtime->take_social_events();
+            platform->process(events);
+            if (p2p) {
+                p2p->set_party(platform->party());
+                p2p->process(events);
+            }
             if (!fail_runtime())
                 update = platform->take_update();
+        }
+        if (p2p) {
+            auto network = p2p->poll();
+            for (auto &result : network.results)
+                update.results.push_back(std::move(result));
+            if (network.failed)
+                failed = true;
         }
         for (auto &result : results)
             update.results.push_back(std::move(result));
@@ -156,6 +185,7 @@ class SteamBackend final : public core::Backend {
         return update;
     }
     void stop() override {
+        p2p.reset();
         if (platform) {
             platform->stop();
             platform.reset();
@@ -176,6 +206,7 @@ class SteamBackend final : public core::Backend {
     core::Identity identity_value;
     std::unique_ptr<Runtime> runtime;
     std::unique_ptr<core::Platform> platform;
+    std::unique_ptr<core::P2P> p2p;
     std::optional<Pending> pending;
     std::optional<std::pair<std::uint64_t, std::uint32_t>> active_ticket;
     std::vector<core::Result> results;

@@ -1,4 +1,7 @@
 #include "orbisteamworks/osw.h"
+typedef char abi_1_config_layout[sizeof(osw_config) == 1196 ? 1 : -1];
+typedef char abi_2_config_layout[sizeof(osw_config_v2) == 12496 ? 1 : -1];
+typedef char abi_2_identity_alignment[offsetof(osw_config_v2, lab_account_id) == 1208 ? 1 : -1];
 
 int osw_header_c_translation_unit(void) {
     osw_config config = {0};

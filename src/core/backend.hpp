@@ -9,6 +9,10 @@ namespace osw::core {
 struct Config {
     std::string library_path, online_id, title, build, realm;
     bool diag_all_friends = false;
+    bool p2p = false;
+    std::uint32_t backend = 0, game_port = 3074;
+    std::uint64_t lab_account_id = 0;
+    std::string lab_root, companion_path, companion_working_dir, companion_environment, game_bind;
 };
 struct Identity {
     bool signed_in = false;
@@ -49,6 +53,7 @@ class Backend {
     virtual Update poll() = 0;
     virtual void stop() = 0;
 };
-// Internal injection seam for contract fixtures; never selected by public config.
+// Internal injection seam for contract fixtures; never selected by public
+// config.
 osw_context *create_context(Config, std::unique_ptr<Backend>);
 } // namespace osw::core

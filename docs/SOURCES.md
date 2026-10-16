@@ -1,5 +1,18 @@
 # Evidence and source references
 
+Native P2P update (2026-10-16): `online` at
+`b1b4bf9647132822147e76aeec47390c6cb157bf` is now the selected native base;
+the historical main-baseline/reference-only labels below are superseded by
+[P2P_DESIGN.md](P2P_DESIGN.md). The user's SDK 1.65 headers were consulted for
+`ISteamMatchmaking`, `ISteamNetworkingMessages`, `ISteamNetworkingUtils` and
+their flat entry points (P). In particular, actual lobby owner and member
+enumeration require membership; public discovery uses metadata first and
+verifies the actual owner after join. Broken Networking Messages sessions
+require explicit reset before a later send. These restrictions are covered by
+the new fixture tests. The local `steam_api64.dll` SHA-256 is
+`e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d`.
+The SDK remains private under ignored `out/`; no provider files are committed.
+
 Updated 2026-10-15. These references support feasibility and the initial
 architecture. The [gate 1 report](GATE1_AUTH_SPIKE.md) records the implemented
 runtime loader and live authentication spike; it does not qualify the full

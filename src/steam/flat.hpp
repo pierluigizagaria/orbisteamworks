@@ -48,6 +48,9 @@ struct LobbyCreated {
     std::int32_t result;
     Id lobby;
 };
+struct LobbyList {
+    std::uint32_t count;
+};
 struct LobbyEnter {
     Id lobby;
     std::uint32_t permissions;
@@ -104,6 +107,22 @@ struct LobbyJoinRequested {
 static_assert(sizeof(void *) == 8 && sizeof(bool) == 1);
 static_assert(sizeof(TicketResponse) == 8 && sizeof(ConnectFailure) == 8);
 static_assert(sizeof(Identity) == 136 && alignof(Identity) == 1);
+#pragma pack(push, 8)
+struct NetworkingMessage {
+    void *data;
+    std::int32_t size;
+    std::uint32_t connection;
+    Identity peer;
+    std::int64_t connection_data, received, number;
+    void (*free_data)(NetworkingMessage *);
+    void (*release)(NetworkingMessage *);
+    std::int32_t channel, flags;
+    std::int64_t user_data;
+    std::uint16_t lane, padding;
+};
+#pragma pack(pop)
+static_assert(offsetof(NetworkingMessage, peer) == 16 &&
+              offsetof(NetworkingMessage, channel) == 192);
 #ifdef _WIN32
 static_assert(sizeof(Callback) == 24);
 #else
@@ -117,6 +136,7 @@ inline constexpr int shutdown_requested = 704;
 inline constexpr int api_call_completed = 703, lobby_created = 513, lobby_enter = 504;
 inline constexpr int lobby_data = 505, lobby_chat = 506, lobby_invite = 503;
 inline constexpr int lobby_message = 507;
+inline constexpr int lobby_list = 510, networking_session_request = 1251;
 inline constexpr int persona_changed = 304, lobby_join_requested = 333, rich_presence_changed = 336;
 inline constexpr std::uint16_t query_port_shared = 0xffff;
 
@@ -165,4 +185,12 @@ using LobbyJoinable = bool (*)(void *, Id, bool);
 using LobbyLimit = bool (*)(void *, Id, int);
 using LobbySend = bool (*)(void *, Id, const void *, int);
 using LobbyRead = int (*)(void *, Id, int, Id *, void *, int, std::int32_t *);
+using LobbyFilterString = void (*)(void *, const char *, const char *, int);
+using InterfaceInt = void (*)(void *, int);
+using LobbySearch = std::uint64_t (*)(void *);
+using LobbyIndex = Id (*)(void *, int);
+using NetworkSend = int (*)(void *, const Identity *, const void *, std::uint32_t, int, int);
+using NetworkReceive = int (*)(void *, int, NetworkingMessage **, int);
+using NetworkSession = bool (*)(void *, const Identity *);
+using NetworkRelease = void (*)(NetworkingMessage *);
 } // namespace osw::steam::flat

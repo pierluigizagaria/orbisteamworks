@@ -9,6 +9,14 @@ NpManager identity, NpAuth ID tokens and NpWebApi requests. The library answers
 them using the Steam client already running on the player's PC. A private game
 server can then admit players by verified SteamID.
 
+The native P2P extension uses ABI 2: each host owns a hidden local publisher,
+discovers rooms through invisible Steam lobbies and sends room messages and
+race datagrams through authenticated Steam Networking Messages. The publisher's
+progression, economy, statistics and files stay local. This is an opt-in mode;
+the original ABI 1 and central ticket-validation path remain available.
+See [P2P_DESIGN.md](docs/P2P_DESIGN.md) and
+[P2P_VALIDATION.md](docs/P2P_VALIDATION.md) for its separate acceptance evidence.
+
 ```text
 PS4 game ──► host (emulator / native port) ──► orbiSteamworks ──► steam_api64 ──► Steam client
                  │                                (C API, in-process)          (supplied by the user)
@@ -22,7 +30,7 @@ PS4 game ──► host (emulator / native port) ──► orbiSteamworks ──
 | --- | --- |
 | Account ID | SteamID64 |
 | Online ID | The Steam persona name, cleaned to at most 16 bytes of UTF-8 (or a name set by the host) |
-| NpAuth ID token | `osw1` token carrying a Steam session ticket, verifiable server-side without a Web API key |
+| NpAuth ID token | `osw1` Steam ticket for central admission, or a per-process capability bound to the hidden local publisher |
 | Friend list | Steam friends currently running the same title, build and realm, shown online |
 | Sessions | Friends-only Steam lobbies, with session data, changeable data and images |
 | Invitations | Steam lobby invitations, accepted from the game or from the Steam overlay |
@@ -31,7 +39,8 @@ PS4 game ──► host (emulator / native port) ──► orbiSteamworks ──
 The WebAPI surface is the Session and Invitation v1 set that NpToolkit2 uses.
 Requests outside it fail with HTTP 501; nothing is forwarded to Sony.
 Scores, TUS, trophies, Matching2 and signaling are not implemented. Game traffic
-keeps using the host's own sockets.
+uses the host's sockets; ABI 2 can supply per-peer loopback UDP proxies backed
+by Steam transport.
 
 ## Requirements and limits
 
@@ -58,8 +67,9 @@ callbacks into the [C API](docs/C_API.md). The game logic stays in the library.
 
 - **shadPS4:** a fork adds a Steam provider behind `NpHandler`, the WebAPI
   transport and NpAuth. It is not published yet.
-- **GetLostIn native port of CTR Nitro-Fueled:** planned, through the same C API
-  from its `runtime_net.c`.
+- **GetLostIn native port of CTR Nitro-Fueled:** the first native P2P host, through
+  the shared ABI 2 from its `runtime_net.c`; its game acceptance is tracked
+  separately from the library's fixture tests.
 - **Game servers:** a server verifies `osw1` tokens by running the
   `osw-auth-helper` included here, which logs on to Steam as an anonymous game
   server. The token format and the helper's protocol are specified in
@@ -79,6 +89,10 @@ admission, party creation and matchmaking search work. Friends, invitations,
 a shared party and a race between two Steam accounts are not verified yet,
 nor is Linux. The [feasibility document](docs/FEASIBILITY.md#acceptance-gates)
 lists the acceptance gates.
+
+The native P2P library additionally passes 31 Windows static/shared contract
+tests, including a two-process simulated backend and hidden-child ownership.
+These results do not establish a Steam peer race or WAN/SDR acceptance.
 
 ## Building
 

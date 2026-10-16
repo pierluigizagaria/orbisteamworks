@@ -9,9 +9,7 @@
 #include <windows.h>
 typedef HMODULE Module;
 static Module load_module(const char *path) { return LoadLibraryA(path); }
-static void *find(Module module, const char *name) {
-    return (void *)GetProcAddress(module, name);
-}
+static void *find(Module module, const char *name) { return (void *)GetProcAddress(module, name); }
 static void unload_module(Module module) { FreeLibrary(module); }
 static void pause_ms(unsigned ms) { Sleep(ms); }
 #else
@@ -38,12 +36,13 @@ typedef struct Api {
     int32_t (*poll_event)(osw_context *, osw_event *);
     int32_t (*stop)(osw_context *);
     void (*destroy)(osw_context *);
+    int32_t (*create_v2)(const osw_config_v2 *, osw_context **);
 } Api;
 
-static const char *const names[] = {"osw_create",     "osw_start",  "osw_get_identity",
-                                    "osw_submit",     "osw_get_result", "osw_cancel",
-                                    "osw_release",    "osw_poll_event", "osw_stop",
-                                    "osw_destroy"};
+static const char *const names[] = {"osw_create",  "osw_start",      "osw_get_identity",
+                                    "osw_submit",  "osw_get_result", "osw_cancel",
+                                    "osw_release", "osw_poll_event", "osw_stop",
+                                    "osw_destroy", "osw_create_v2"};
 #define NAME_COUNT (sizeof(names) / sizeof(names[0]))
 
 static int fail(const char *message) {
@@ -173,7 +172,8 @@ int main(int argc, char **argv) {
     size_t i;
     int code;
     if (argc != 3)
-        return fail("usage: osw-shared-load-test <orbisteamworks library> <absent steam library>");
+        return fail("usage: osw-shared-load-test <orbisteamworks library> <absent "
+                    "steam library>");
     module = load_module(argv[1]);
     if (!module)
         return fail("cannot load the orbisteamworks shared library");
@@ -201,6 +201,15 @@ int main(int argc, char **argv) {
     memcpy(&api.poll_event, &slots[7], sizeof(void *));
     memcpy(&api.stop, &slots[8], sizeof(void *));
     memcpy(&api.destroy, &slots[9], sizeof(void *));
+    memcpy(&api.create_v2, &slots[10], sizeof(void *));
+    {
+        osw_config_v2 invalid = {0};
+        osw_context *context = NULL;
+        if (api.create_v2(&invalid, &context) != OSW_INVALID_ARGUMENT || context != NULL) {
+            unload_module(module);
+            return fail("ABI 2 rejects invalid configuration");
+        }
+    }
     code = run(&api, argv[2]);
     unload_module(module);
     if (!code)

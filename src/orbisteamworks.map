@@ -15,3 +15,6 @@ OSW_ABI_1 {
   local:
     *;
 };
+OSW_ABI_2 {
+  global: osw_create_v2;
+} OSW_ABI_1;

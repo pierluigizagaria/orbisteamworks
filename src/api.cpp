@@ -1,5 +1,7 @@
 #include "core/backend.hpp"
 #include "core/credential.hpp"
+#include "core/local_io.hpp"
+#include "lab/backend.hpp"
 #include "steam/backend.hpp"
 #include <algorithm>
 #include <atomic>
@@ -10,6 +12,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <thread>
 
 namespace {
@@ -245,6 +248,60 @@ int32_t osw_start(osw_context *context) {
         return OSW_UNAVAILABLE;
     }
 }
+int32_t osw_create_v2(const osw_config_v2 *config, osw_context **output) {
+    if (!output)
+        return OSW_INVALID_ARGUMENT;
+    *output = nullptr;
+    try {
+        if (!config || config->base.size != sizeof(*config) ||
+            config->base.abi_version != OSW_ABI_VERSION_2 || config->backend > 1 ||
+            config->game_port < 1 || config->game_port > 65535)
+            return OSW_INVALID_ARGUMENT;
+        osw::core::Config copied;
+        if (!read_string(config->base.library_path, copied.library_path) ||
+            !read_string(config->base.online_id, copied.online_id) ||
+            !read_string(config->base.title, copied.title) ||
+            !read_string(config->base.build, copied.build) ||
+            !read_string(config->base.realm, copied.realm) ||
+            !read_string(config->lab_root, copied.lab_root) ||
+            !read_string(config->companion_path, copied.companion_path) ||
+            !read_string(config->companion_working_dir, copied.companion_working_dir) ||
+            !read_string(config->companion_environment, copied.companion_environment) ||
+            !read_string(config->game_bind, copied.game_bind) || !namespace_part(copied.title) ||
+            !namespace_part(copied.build) || !namespace_part(copied.realm) ||
+            copied.realm.find('.') != std::string::npos ||
+            !osw::core::loopback_address(copied.game_bind) ||
+            (!copied.online_id.empty() && !osw::core::valid_online_id(copied.online_id)))
+            return OSW_INVALID_ARGUMENT;
+        auto env = nlohmann::json::parse(
+            copied.companion_environment.empty() ? "{}" : copied.companion_environment, nullptr,
+            false);
+        if (!env.is_object() ||
+            (config->backend == 1 && (!config->lab_account_id || copied.lab_root.empty())))
+            return OSW_INVALID_ARGUMENT;
+        copied.backend = config->backend;
+        copied.game_port = config->game_port;
+        copied.lab_account_id = config->lab_account_id;
+        copied.p2p = true;
+        if (config->backend == 1) {
+            *output = osw::core::create_context(std::move(copied), osw::lab::make_backend());
+            return OSW_OK;
+        }
+        bool expected = false;
+        if (!production_context.compare_exchange_strong(expected, true))
+            return OSW_LIMIT;
+        try {
+            *output = osw::core::create_context(std::move(copied), osw::steam::make_backend());
+            (*output)->production = true;
+        } catch (...) {
+            production_context = false;
+            throw;
+        }
+        return OSW_OK;
+    } catch (...) {
+        return OSW_INVALID_ARGUMENT;
+    }
+}
 int32_t osw_get_identity(osw_context *context, osw_identity *output) {
     if (!context || !output || output->size != sizeof(*output))
         return OSW_INVALID_ARGUMENT;
@@ -268,8 +325,8 @@ int32_t osw_get_identity(osw_context *context, osw_identity *output) {
 }
 int32_t osw_submit(osw_context *context, const osw_request *request, uint64_t *request_id) {
     if (!context || !request || !request_id || request->size != sizeof(*request) ||
-        request->operation < OSW_TOKEN || request->operation > OSW_RESOLVE_NAME ||
-        request->timeout_ms < 1 || request->timeout_ms > 60000 || request->metadata_size > 65536 ||
+        request->operation < OSW_TOKEN || request->operation > OSW_P2P || request->timeout_ms < 1 ||
+        request->timeout_ms > 60000 || request->metadata_size > 65536 ||
         request->body_size > 1024 * 1024 || (request->metadata_size && !request->metadata) ||
         (request->body_size && !request->body))
         return OSW_INVALID_ARGUMENT;

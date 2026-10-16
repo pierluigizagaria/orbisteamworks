@@ -3,6 +3,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <string>
+#include <map>
+#include <deque>
+#include <vector>
+#include <cstring>
 #ifdef _WIN32
 #define EXPORT extern "C" __declspec(dllexport)
 #else
@@ -22,6 +27,15 @@ std::string_view scenario() {
 int marker = 1;
 TicketResponse ticket_reply{1, 2};
 ConnectFailure connection_reply{2, false};
+std::uint64_t next_call = 100;
+std::deque<CallCompleted> completed;
+std::map<std::string, std::string> lobby_values, filters;
+std::deque<std::pair<Identity, std::string>> network_queue;
+bool room_exists = false;
+bool network_failed_once = false, network_reset = false;
+bool network_session_delivered = false, network_session_accepted = false;
+Identity network_session_identity{};
+int last_lobby_type = -1, distance = 1;
 } // namespace
 EXPORT InitResult SteamAPI_InitFlat(ErrorMessage *) { return scenario() == "no-client" ? 2 : 0; }
 EXPORT InitResult SteamInternal_GameServer_Init_V2(std::uint32_t ip, std::uint16_t game,
@@ -43,6 +57,21 @@ EXPORT void SteamAPI_ManualDispatch_RunFrame(Pipe) { ++frame_count; }
 EXPORT bool SteamAPI_ManualDispatch_GetNextCallback(Pipe, Callback *cb) {
     if (callback_pending)
         std::abort();
+    if (scenario() == "p2p" && !completed.empty()) {
+        *cb = {1, api_call_completed, (std::uint8_t *)&completed.front(), sizeof(CallCompleted)};
+        callback_pending = true;
+        return true;
+    }
+    if (scenario() == "p2p" && network_failed_once && !network_session_delivered) {
+        network_session_delivered = true;
+        network_session_identity.type = 16;
+        network_session_identity.size = 8;
+        network_session_identity.steam_id = 2;
+        *cb = {1, networking_session_request, (std::uint8_t *)&network_session_identity,
+               sizeof(network_session_identity)};
+        callback_pending = true;
+        return true;
+    }
     if (!server && scenario() == "shutdown-pending" && !sent) {
         *cb = {1, shutdown_requested, nullptr, 0};
     } else if (!server && scenario() == "shutdown-ready" && !sent) {
@@ -80,6 +109,8 @@ EXPORT void SteamAPI_ManualDispatch_FreeLastCallback(Pipe) {
     if (!callback_pending)
         std::abort();
     callback_pending = false;
+    if (scenario() == "p2p" && !completed.empty())
+        completed.pop_front();
 }
 EXPORT Pipe SteamAPI_GetHSteamPipe() { return 1; }
 EXPORT Pipe SteamGameServer_GetHSteamPipe() { return 2; }
@@ -130,15 +161,38 @@ EXPORT void *SteamAPI_SteamFriends_v018() {
     return scenario() == "missing-social" ? nullptr : &marker;
 }
 EXPORT void *SteamAPI_SteamMatchmaking_v009() { return &marker; }
-EXPORT bool SteamAPI_ManualDispatch_GetAPICallResult(Pipe, std::uint64_t, void *, int, int,
-                                                   bool *) { return false; }
+EXPORT bool SteamAPI_ManualDispatch_GetAPICallResult(Pipe, std::uint64_t, void *out, int size,
+                                                     int kind, bool *failed) {
+    if (scenario() != "p2p")
+        return false;
+    *failed = false;
+    if (kind == lobby_created && size == sizeof(LobbyCreated)) {
+        *(LobbyCreated *)out = {1, 9001};
+        return true;
+    }
+    if (kind == lobby_list && size == sizeof(LobbyList)) {
+        bool match = room_exists;
+        for (auto &[key, value] : filters)
+            if (lobby_values[key] != value)
+                match = false;
+        *(LobbyList *)out = {(std::uint32_t)(match ? 1 : 0)};
+        return true;
+    }
+    if (kind == lobby_enter && size == sizeof(LobbyEnter)) {
+        *(LobbyEnter *)out = {9001, 0, false, 1};
+        return true;
+    }
+    return false;
+}
 EXPORT int SteamAPI_ISteamFriends_GetFriendCount(void *, int) {
     return scenario() == "bad-friend-count" ? -1 : 0;
 }
 EXPORT Id SteamAPI_ISteamFriends_GetFriendByIndex(void *, int, int) { return 0; }
 EXPORT int SteamAPI_ISteamFriends_GetFriendPersonaState(void *, Id) { return 0; }
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendPersonaName(void *, Id) { return ""; }
-EXPORT const char *SteamAPI_ISteamFriends_GetPersonaName(void *) { return " Fixture\x01 Persona \xf0\x9f\x8f\x8e"; }
+EXPORT const char *SteamAPI_ISteamFriends_GetPersonaName(void *) {
+    return " Fixture\x01 Persona \xf0\x9f\x8f\x8e";
+}
 EXPORT const char *SteamAPI_ISteamFriends_GetFriendRichPresence(void *, Id, const char *) {
     return "";
 }
@@ -146,21 +200,39 @@ EXPORT bool SteamAPI_ISteamFriends_SetRichPresence(void *, const char *, const c
     return scenario() != "presence-failure" || !*value;
 }
 EXPORT void SteamAPI_ISteamFriends_RequestFriendRichPresence(void *, Id) {}
-EXPORT std::uint64_t SteamAPI_ISteamMatchmaking_CreateLobby(void *, int, int) { return 0; }
+EXPORT std::uint64_t SteamAPI_ISteamMatchmaking_CreateLobby(void *, int type, int) {
+    if (scenario() != "p2p")
+        return 0;
+    last_lobby_type = type;
+    room_exists = true;
+    auto call = next_call++;
+    completed.push_back({call, lobby_created, sizeof(LobbyCreated)});
+    return call;
+}
 EXPORT std::uint64_t SteamAPI_ISteamMatchmaking_JoinLobby(void *, Id) { return 0; }
-EXPORT void SteamAPI_ISteamMatchmaking_LeaveLobby(void *, Id) {}
+EXPORT void SteamAPI_ISteamMatchmaking_LeaveLobby(void *, Id) { room_exists = false; }
 EXPORT bool SteamAPI_ISteamMatchmaking_InviteUserToLobby(void *, Id, Id) { return false; }
 EXPORT bool SteamAPI_ISteamMatchmaking_RequestLobbyData(void *, Id) { return false; }
-EXPORT const char *SteamAPI_ISteamMatchmaking_GetLobbyData(void *, Id, const char *) { return ""; }
-EXPORT bool SteamAPI_ISteamMatchmaking_SetLobbyData(void *, Id, const char *, const char *) {
-    return false;
+EXPORT const char *SteamAPI_ISteamMatchmaking_GetLobbyData(void *, Id, const char *key) {
+    return scenario() == "p2p" ? lobby_values[key].c_str() : "";
+}
+EXPORT bool SteamAPI_ISteamMatchmaking_SetLobbyData(void *, Id, const char *key,
+                                                    const char *value) {
+    if (scenario() != "p2p")
+        return false;
+    lobby_values[key] = value;
+    return true;
 }
 EXPORT bool SteamAPI_ISteamMatchmaking_DeleteLobbyData(void *, Id, const char *) { return false; }
-EXPORT Id SteamAPI_ISteamMatchmaking_GetLobbyOwner(void *, Id) { return 0; }
-EXPORT int SteamAPI_ISteamMatchmaking_GetNumLobbyMembers(void *, Id) {
-    return scenario() == "bad-member-count" ? -1 : 0;
+EXPORT Id SteamAPI_ISteamMatchmaking_GetLobbyOwner(void *, Id) {
+    return scenario() == "p2p" ? 1 : 0;
 }
-EXPORT Id SteamAPI_ISteamMatchmaking_GetLobbyMemberByIndex(void *, Id, int) { return 0; }
+EXPORT int SteamAPI_ISteamMatchmaking_GetNumLobbyMembers(void *, Id) {
+    return scenario() == "bad-member-count" ? -1 : scenario() == "p2p" ? 1 : 0;
+}
+EXPORT Id SteamAPI_ISteamMatchmaking_GetLobbyMemberByIndex(void *, Id, int) {
+    return scenario() == "p2p" ? 1 : 0;
+}
 EXPORT const char *SteamAPI_ISteamMatchmaking_GetLobbyMemberData(void *, Id, Id, const char *) {
     return "";
 }
@@ -171,5 +243,84 @@ EXPORT bool SteamAPI_ISteamMatchmaking_SendLobbyChatMsg(void *, Id, const void *
     return false;
 }
 EXPORT int SteamAPI_ISteamMatchmaking_GetLobbyChatEntry(void *, Id, int, Id *, void *, int,
-                                                      std::int32_t *) { return 0; }
+                                                        std::int32_t *) {
+    return 0;
+}
 EXPORT bool SteamAPI_ISteamMatchmaking_SetLobbyType(void *, Id, int) { return false; }
+EXPORT void *SteamAPI_SteamNetworkingMessages_SteamAPI_v002() { return &marker; }
+EXPORT void *SteamAPI_SteamNetworkingUtils_SteamAPI_v004() { return &marker; }
+EXPORT void SteamAPI_ISteamNetworkingUtils_InitRelayNetworkAccess(void *) {}
+EXPORT void SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter(void *, const char *key,
+                                                                       const char *value,
+                                                                       int compare) {
+    if (compare != 0)
+        std::abort();
+    filters[key] = value;
+}
+EXPORT void SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter(void *, int value) {
+    if (value < 1 || value > 3)
+        std::abort();
+    distance = value;
+}
+EXPORT void SteamAPI_ISteamMatchmaking_AddRequestLobbyListFilterSlotsAvailable(void *, int value) {
+    if (value != 1)
+        std::abort();
+}
+EXPORT void SteamAPI_ISteamMatchmaking_AddRequestLobbyListResultCountFilter(void *, int value) {
+    if (value != 32)
+        std::abort();
+}
+EXPORT std::uint64_t SteamAPI_ISteamMatchmaking_RequestLobbyList(void *) {
+    auto call = next_call++;
+    completed.push_back({call, lobby_list, sizeof(LobbyList)});
+    return call;
+}
+EXPORT Id SteamAPI_ISteamMatchmaking_GetLobbyByIndex(void *, int index) {
+    if (index != 0 || last_lobby_type != 3)
+        std::abort();
+    return 9001;
+}
+EXPORT int SteamAPI_ISteamNetworkingMessages_SendMessageToUser(void *, const Identity *identity,
+                                                               const void *bytes,
+                                                               std::uint32_t size, int flags,
+                                                               int channel) {
+    if (identity->type != 16 || identity->size != 8 || (channel == 48 ? flags != 1 : flags != 9))
+        std::abort();
+    if (!network_failed_once) {
+        network_failed_once = true;
+        return 3;
+    }
+    if (!network_reset || !network_session_accepted)
+        std::abort();
+    auto peer = *identity;
+    network_queue.push_back({peer, std::string((const char *)bytes, size)});
+    return 1;
+}
+EXPORT int SteamAPI_ISteamNetworkingMessages_ReceiveMessagesOnChannel(void *, int channel,
+                                                                      NetworkingMessage **output,
+                                                                      int count) {
+    if (channel != 47 || network_queue.empty() || count < 1)
+        return 0;
+    auto value = std::move(network_queue.front());
+    network_queue.pop_front();
+    auto message = new NetworkingMessage{};
+    message->peer = value.first;
+    message->size = (int)value.second.size();
+    message->channel = channel;
+    message->data = new char[value.second.size()];
+    std::memcpy(message->data, value.second.data(), value.second.size());
+    *output = message;
+    return 1;
+}
+EXPORT bool SteamAPI_ISteamNetworkingMessages_AcceptSessionWithUser(void *, const Identity *) {
+    network_session_accepted = true;
+    return true;
+}
+EXPORT bool SteamAPI_ISteamNetworkingMessages_CloseSessionWithUser(void *, const Identity *) {
+    network_reset = true;
+    return true;
+}
+EXPORT void SteamAPI_SteamNetworkingMessage_t_Release(NetworkingMessage *message) {
+    delete[] (char *)message->data;
+    delete message;
+}
