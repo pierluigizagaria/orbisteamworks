@@ -237,3 +237,47 @@ both pass; the latter includes simulated invite acceptance and party selection.
 The publisher separately fixes event/query snapshot ordering. These tests run
 real publisher child executables but use the explicit lab platform backend;
 they do not qualify two-account Steam or original-game multiplayer.
+
+## Windows Lab hub replacement contention (2026-10-16)
+
+During the original-game Lab investigation, one publisher logged companion
+closure at 11:50:52 local time while its native host remained alive. A direct
+read-only inspection of the active Lab hub had been performed during that
+investigation; its exact read timestamp was not retained. This makes observer
+interference a plausible cause, not an established diagnosis of that shutdown.
+No further direct reads of the active hub were used for this validation.
+
+An isolated Windows experiment reproduced the concrete failure mode: a reader
+opened without `FILE_SHARE_DELETE` prevents `MoveFileExW` from replacing the
+hub, returning `ERROR_ACCESS_DENIED`. Opening the target with `DELETE` access
+and all sharing modes then identifies `ERROR_SHARING_VIOLATION`. Previously any
+replacement failure escaped the Lab worker and shut down its local companion.
+
+The Lab replacement helper now retries sharing/lock violations for at most
+approximately 500 ms, with 10 ms sleeps. `ERROR_ACCESS_DENIED` is retried only
+when that non-mutating target probe confirms sharing/lock contention; other
+errors remain immediate failures. The budget is shorter than the existing
+two-second hub-lock acquisition deadline. The complete staged file and previous
+hub remain intact on failure. There is no session or idle timeout, no retry of
+arbitrary permanent errors, and no change to the Steam backend or public API.
+External observation must avoid holding a live hub handle without delete
+sharing; the bounded retry is not permission to hold that file indefinitely.
+
+The real Windows regression holds an incompatible reader for 150 ms and verifies
+successful complete replacement; a persistent reader verifies bounded failure
+and unchanged files; a read-only target verifies immediate permanent failure.
+The new MSVC static/shared candidate `build/lab-sharing-candidate/` passed all
+37 CTest cases (27.21 seconds), including this new test. One final actual
+two-child default Lab probe passed with the unchanged publisher SHA-256
+`0fc70159dad030a978f7126e25368fec4e911cc8d418980f7268fe290a027369`:
+unilateral pre-party UDP, room transport and actual disconnect/seat removal.
+The previous candidate's default and committed-party probes are recorded in
+[INTEGRATION_WORKLOG.md](INTEGRATION_WORKLOG.md).
+
+Final candidate DLL SHA-256:
+`69df08ab135b599fb48b9d3951ab8640fdd1c012bfbee4f37b588b5cb864ca1d`.
+Private evidence: `out/lab-sharing-candidate-build.log` and publisher
+`.cache/p2p-probe/lab-sharing-final-default.log`. These remain implementation
+fixtures; no active game or Steam process was controlled or restarted, and no
+candidate was installed by these checks. Original-game race acceptance remains
+separate. Linux behavior is unchanged and was not qualified by this Windows test.

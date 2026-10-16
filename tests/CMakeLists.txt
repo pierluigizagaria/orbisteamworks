@@ -19,6 +19,11 @@ set_tests_properties(p2p-cross-process-lab PROPERTIES TIMEOUT 60)
 add_executable(osw-child-wait-tests child_wait_tests.cpp)
 target_include_directories(osw-child-wait-tests PRIVATE ../src)
 add_test(NAME child-wait-ownership COMMAND osw-child-wait-tests)
+if(WIN32)
+  add_executable(osw-lab-file-tests lab_file_tests.cpp)
+  target_include_directories(osw-lab-file-tests PRIVATE ../src)
+  add_test(NAME lab-file-sharing COMMAND osw-lab-file-tests)
+endif()
 
 # These fixtures are our own code, never Steam SDK files. They are only passed
 # through --library by offline tests; production has no simulated fallback.

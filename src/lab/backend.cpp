@@ -1,4 +1,5 @@
 #include "lab/backend.hpp"
+#include "lab/file_replace.hpp"
 #include "core/credential.hpp"
 #include "core/local_io.hpp"
 #include "core/p2p.hpp"
@@ -152,9 +153,7 @@ class Store {
                 throw std::runtime_error("lab hub write");
         }
 #ifdef _WIN32
-        if (!MoveFileExW(temporary.c_str(), path.c_str(),
-                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            throw std::runtime_error("lab hub replace");
+        detail::replace_hub_file(temporary, path);
 #else
         std::filesystem::rename(temporary, path);
 #endif
