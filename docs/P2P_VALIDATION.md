@@ -119,12 +119,25 @@ P1/P2/P3 results. Linux child/spawn/socket code is implemented but has not been
 compiled or accepted on Linux in this Windows run. The lab UDP carrier limits
 game datagrams to 65,487 bytes because of its additional local headers.
 
+The native host agent subsequently passed its real Steam host-adapter probe
+against this DLL and publisher v2: NP identity and child readiness, guest osw1
+admission, the in-process friend-list query, and party creation, metadata/binary
+readback and leave (native checkpoint `178420d`, 3.047 seconds, exit code 0).
+This is host-boundary evidence; it does not establish a populated two-account
+friend page or original-game P2 acceptance. Separately, the parent records human
+confirmation of original-game Online and Pit Stop in the lab/central setup as
+scoped P1 evidence. Original-game Steam P2 and a two-player P3 race remain pending.
+
 ## Two-PC procedure (pending execution)
 
 1. Use two PCs with separate Steam accounts that are friends. Each user supplies
    their own SDK runtime. Pin the same library, native host, publisher build,
    original game version and signature patch; record SHA-256 hashes privately.
-   Start with matching title `5760`, build `01.21` and a private test realm.
+   Start with matching title `5760`, build `1.21` and a private test realm.
+   Build and realm strings must be exactly equal on both PCs: `1.21` and
+   `01.21` are distinct namespaces. The standalone directory diagnostic uses
+   its own `01.21` / `p2p-gate` namespace and is stopped before game testing;
+   the two-PC game example follows the native defaults and profiles.
 2. On each PC configure ABI 2 Steam mode, a distinct loopback game endpoint
    from its publisher listener, and a private companion working directory.
    The child environment includes `CTR_COMPANION=stdio`, `CTR_ADMISSION=local`
