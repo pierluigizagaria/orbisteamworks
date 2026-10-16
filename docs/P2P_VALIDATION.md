@@ -318,3 +318,29 @@ tests. The publisher's actual two-child integration is an optional external
 consumer of the public API; its final matching-build evidence is recorded
 separately. Original-game racing, Linux runtime behavior and two-account Steam
 transport remain separate acceptance gates.
+
+The final actual two-child publisher probes also passed in both ordinary and
+committed-party modes with library source `93c4b5c` and the exact DLL above.
+The publisher executable was built from `112e884`, SHA-256
+`75767b9adb27d7f2f979285b3e2291858a79cc24c6642a516f836c938175bbd0`.
+Both artifact hashes were checked before and after the runs. These optional
+integration probes verify exact address-document preservation, canonical local
+discovery replies, forward/reverse C API mappings with actual opaque proxy UDP,
+follower selection and disconnect/seat removal. An isolated owned-instruction
+check validates the original target-identity gate against the actual returned
+synthetic advertisement; this is not an original-game session or a race.
+Private publisher evidence is `.cache/p2p-probe/canonical-final-default.log`,
+`canonical-final-party.log`, and `canonical-final-acceptance-report.json` in
+that same directory. The publisher remains independently built; the library's
+standalone suite neither requires nor starts it.
+
+A separate live single-account Steam host/companion check passed at
+2026-10-16T11:26:59Z (exit 0, 3.016 seconds), using native host source
+`583744a61e212cd3a88a1a3ffe5a9e290cd86437` and probe SHA-256
+`49fb6ca1a60c188e4d78746a1c7a825cda04de9843e4709fd7ee6247a42f7899`.
+It used the same library source `93c4b5c`/DLL `bb6bb925...` and publisher
+`75767b9a...` pinned above. Private evidence is the consuming host's
+`out/p2p/virtual-endpoint-steam-check/result.json`. This qualifies the measured
+one-account host API/companion path with virtual endpoints enabled, not a peer
+exchange. Original-game Join/race acceptance and two-account Steam transport
+remain unqualified. This documentation follow-up does not change those binaries.
