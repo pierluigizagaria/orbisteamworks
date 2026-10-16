@@ -102,9 +102,14 @@ presented as Steam validation. One Steam account cannot qualify two live peers.
 | P5 | Guest event fixtures and lab invite/accept/party search; two-account Steam test explicitly pending |
 
 Record F/C/U/H/P/S/I classes, source/build hashes and limitations at each gate.
-The user's later direct authorization permits automated PC/game tests for this
-task, superseding the task draft's human-input-only sentence. Steam may be
-launched or restarted. Preserve owned assets and back up replaced executables.
+Authorization update, 2026-10-16: the user's later instruction keeps gameplay
+human-operated, superseding the earlier permission to automate game input.
+The user explicitly authorized installing updates and relaunching the native
+Lab pair for iterative tests; this does not authorize gameplay input without
+a new handoff. The user also requested no further executable backup copies
+for these iterative native Lab updates, superseding the earlier backup rule
+for that scope. Preserve existing backups, owned assets, saves and databases.
+These permissions do not authorize publication or system-setting changes.
 
 Reassess if publisher reconstruction grows broadly, the native runtime dominates,
 or owner/follower propagation cannot fit the room-owner engine. A remaining

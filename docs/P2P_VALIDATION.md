@@ -11,7 +11,8 @@ No SDK source or binary is distributed by this repository.
 ## Implemented boundary
 
 - ABI 1 remains intact; ABI 2 adds backend, game endpoint and companion config.
-  The shared library exports the original ten functions plus `osw_create_v2`.
+  The original ten exports plus `osw_create_v2` remain available; canonical
+  endpoints add three optional exports without changing those structure layouts.
 - Steam directory search uses exact public namespace filters, serial
   Default/Far/Worldwide expansion and bounded results. Public metadata is
   allow-listed and limited to 256 bytes in both directions. The advertised
@@ -150,17 +151,32 @@ scoped P1 evidence. Original-game Steam P2 and a two-player P3 race remain pendi
 1. Use two PCs with separate Steam accounts that are friends. Each user supplies
    their own SDK runtime. Pin the same library, native host, publisher build,
    original game version and signature patch; record SHA-256 hashes privately.
-   Start with matching title `5760`, build `1.21` and a private test realm.
-   Build and realm strings must be exactly equal on both PCs: `1.21` and
+   Use canonical endpoint mode on both PCs for this integration, with matching
+   title `5760`, build `1.21` and a private test realm. Address mode, title, build
+   and realm must match exactly: `1.21` and
    `01.21` are distinct namespaces. The standalone directory diagnostic uses
    its own `01.21` / `p2p-gate` namespace and is stopped before game testing;
    the two-PC game example follows the native defaults and profiles.
 2. On each PC configure ABI 2 Steam mode, a distinct loopback game endpoint
    from its publisher listener, and a private companion working directory.
+   Physical loopback values may be the same on different PCs; each game's
+   endpoint must still be distinct from its own local publisher endpoint.
+   The host calls `osw_enable_virtual_endpoints` after `osw_create_v2` and before
+   `osw_start`, then uses the copied endpoint/route API documented in
+   [C_API.md](C_API.md). Canonical addresses and ports are provider-owned:
+   never enter them manually or copy them between profiles. As a configuration
+   example for the native consumer, set `BB_OSW_VIRTUAL_ENDPOINTS=1`; this is
+   that host's opt-in setting, not an environment variable read by the library
+   or a requirement for other hosts.
    The child environment includes `CTR_COMPANION=stdio`, `CTR_ADMISSION=local`
    and `CTR_MATCHMAKING=steam`. Keep normal and unlock-all databases and saves
-   in separate directories. Wait for companion `status.ready` before entering
-   the game's Online mode. No central helper or remote publisher is required.
+   in separate directories. The companion must acknowledge
+   `virtual.endpoints.v1` in its ready capabilities; missing support fails
+   startup. Wait for provider readiness, companion `status.ready` and a
+   successful `osw_get_local_endpoint` before entering the game's Online mode.
+   Both peers must use the same mode: virtual protocol 2 and legacy protocol 1
+   are isolated for friends, parties, rooms, advertisements and peer carriers.
+   No central helper or remote publisher is required.
 3. First run the single-account diagnostic on each PC separately. Stop it before
    launching the game. Verify Online identity, local admission and the in-game
    friend list on both game processes. Confirm a player from another realm is
