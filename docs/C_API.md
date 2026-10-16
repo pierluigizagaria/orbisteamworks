@@ -11,6 +11,16 @@ initialization succeeded. Steam symbols and callback dispatch run only on that
 thread. The library never invokes host or guest callbacks. Missing dependencies
 produce signed-out identity with a reason, rather than fabricated success.
 
+The opt-in Lab backend reports terminal storage failures through the same
+`osw_identity.reason_code = OSW_UNAVAILABLE` and a fixed, non-sensitive reason
+category (for example, `Lab hub read sharing timeout`, `Lab active hub missing`,
+or `Lab hub state invalid`). These messages never contain a file path, account
+data or arbitrary exception text. A failed context cannot restart. A temporary
+Windows read-sharing conflict is retried before any state mutation for at most
+approximately 500 ms; permanent errors fail immediately. Failed reads never
+initialize or save replacement state, and active operations require the hub to
+exist. These rules add no session lifetime or idle timeout.
+
 `osw_submit` copies metadata and binary data. Requests have monotonically increasing
 IDs, a 1–60000 ms timeout, at most 64 KiB of JSON metadata and 1 MiB of body data.
 There are at most 128 retained requests and separate 16 MiB input/output budgets.

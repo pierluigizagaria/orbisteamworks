@@ -396,3 +396,68 @@ The matching search does not qualify distance widening. This one-account
 directory check does not qualify remote peer/SDR transport, original-game Join
 or racing, or two-account Steam behavior. No source or build changed during
 this documentation follow-up.
+
+## Lab hub read failures and unattended stability (2026-10-16)
+
+The subsequently installed original-game Lab pair lost both companions at
+13:28:59 local time while both host processes remained alive. The companions
+reported EOF; a separately authorized, read-only host-state inspection found
+both library identities signed out with `OSW_UNAVAILABLE` and the old generic
+`Platform backend failed` reason, while the host's stop flags remained clear.
+This establishes that both library workers reached their exception path. It
+does not identify the actual exception. No active hub was opened during this
+investigation, and neither the earlier startup checks nor this diagnosis
+qualify an original-game Join or race.
+
+A focused source review found that an unsuccessful `ifstream` open was treated
+as a missing hub. On an existing unreadable file this could erase the in-memory
+user state, then fail polling or save partial replacement state during cleanup.
+An isolated two-context baseline stayed ready for 120 seconds. A corrected
+Windows fault injector then opened only its newly created fixture hub with
+`GENERIC_WRITE`, without performing any writes, and omitted `FILE_SHARE_READ`.
+It explicitly verified that a full-share `GENERIC_READ` open failed with
+`ERROR_SHARING_VIOLATION` (32). Holding that handle for 200 ms reproduced both
+old providers failing at 2.2 seconds with the generic reason. This is a concrete
+storage defect reproduction, not proof that the same file-open condition caused
+the unattended original-game failure. An earlier metadata-only fault handle
+used access 0 and did not establish that read denial; the corrected experiment
+supersedes that interpretation.
+
+The reader now distinguishes genuine absence from an unreadable existing hub.
+Only initial identity registration may create absent state; all active and
+cleanup operations require an existing, successfully read hub. Windows opens
+permit read, write and delete sharing. Only proven sharing/lock errors 32/33
+are retried, before state mutation, within approximately 500 ms, below the
+existing two-second lock acquisition deadline. Permanent read errors and invalid
+state fail closed. Saving checks both explicit flush and close before replacing
+the old file. A failed read cannot publish partial state. Fixed safe Lab failure
+categories now reach the existing identity reason field without exposing paths,
+identities, payloads or arbitrary exception text. There is no request replay,
+reconnection policy or session/idle cutoff.
+
+The isolated MSVC static/shared candidate in `build/lab-read-candidate/` built
+successfully. The initial CTest run passed 38 cases and exposed two mistakes in
+the new tests' metadata-only denial handles. After changing only those injectors
+to request actual access, both focused regressions passed in 2.11 seconds;
+there are 40 passing cases across those two runs, not a claimed single clean
+40-case run. The tests verify transient recovery, bounded persistent failure,
+exact existing-byte/user preservation through failed startup and teardown,
+immediate permanent-open failure, and refusal to recreate a missing active hub.
+The DLL was not rebuilt between those runs. Linux's absence/read
+distinction was updated but its runtime behavior was not qualified on Windows.
+
+The new DLL then passed the complete 120-second isolated paired-provider run
+with the verified 200 ms error-32 fault at two seconds. Both identities and
+canonical endpoint APIs remained ready after the fault and throughout the
+remaining interval (exit 0). DLL SHA-256:
+`103a115e54542d8f3472a1eb02d614f677c36947b1f6526541594899edbc2583`.
+This bounds the measured fixture result; it is not an unattended lifetime
+guarantee or qualification of the still-unexplained live failure's cause.
+
+Private evidence: `out/lab-idle-probe.log`, `out/lab-read-verified-before.log`,
+`out/lab-read-candidate-build.log`, `out/lab-read-focused.log`, and
+`out/lab-read-stability-after.log`. The private reproducer is
+`out/lab-read-stability-probe.py`; it accepts `--dll`, `--duration`, and the
+old-binary-only `--expect-failure`. These are
+standalone library fixtures; no actual publisher, game or Steam process is
+required by them. No active game or installed DLL was changed by these checks.

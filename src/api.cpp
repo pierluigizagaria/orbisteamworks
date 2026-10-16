@@ -3,6 +3,7 @@
 #include "core/endpoints.hpp"
 #include "core/local_io.hpp"
 #include "lab/backend.hpp"
+#include "lab/error.hpp"
 #include "steam/backend.hpp"
 #include <algorithm>
 #include <atomic>
@@ -165,6 +166,10 @@ struct osw_context {
                     return stopping || !queued.empty() || !cancellations.empty();
                 });
             }
+        } catch (const osw::lab::FailureError &error) {
+            std::lock_guard lock(mutex);
+            identity = {false, 0, {}, osw::lab::failure_reason(error.failure), OSW_UNAVAILABLE};
+            stopping = true;
         } catch (const osw::Error &error) {
             std::lock_guard lock(mutex);
             identity = {

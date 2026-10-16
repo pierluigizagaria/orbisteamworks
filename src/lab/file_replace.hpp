@@ -1,4 +1,5 @@
 #pragma once
+#include "lab/error.hpp"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -44,7 +45,7 @@ inline void replace_hub_file(const std::filesystem::path &temporary,
             return;
         const auto error = GetLastError();
         if (!sharing_conflict(error, target) || Clock::now() >= deadline)
-            throw std::runtime_error("lab hub replace");
+            throw FailureError(Failure::replace);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }

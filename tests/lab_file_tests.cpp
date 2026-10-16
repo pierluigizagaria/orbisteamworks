@@ -1,4 +1,5 @@
 #include "lab/file_replace.hpp"
+#include "lab/file_read.hpp"
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -27,6 +28,17 @@ struct Reader {
         check(handle != INVALID_HANDLE_VALUE, "fixture reader");
     }
     ~Reader() { CloseHandle(handle); }
+};
+struct DenyRead {
+    HANDLE handle;
+    // Request real access but never write: metadata-only access (0) does not
+    // make these sharing flags deny the production reader's full-share open.
+    explicit DenyRead(const std::filesystem::path &path)
+        : handle(CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)) {
+        check(handle != INVALID_HANDLE_VALUE, "fixture read-denial handle");
+    }
+    ~DenyRead() { CloseHandle(handle); }
 };
 } // namespace
 
@@ -99,6 +111,41 @@ int main() {
               "permanent access denial is not retried");
         check(read(target) == "new" && read(temporary) == "later",
               "permanent failure leaves the current hub unchanged");
+
+        auto denied_reader = std::make_unique<DenyRead>(target);
+        const auto read_started = Clock::now();
+        std::jthread release_read([owned = std::move(denied_reader)]() mutable {
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            owned.reset();
+        });
+        check(osw::lab::detail::read_hub_file(target) == "new" &&
+                  Clock::now() - read_started >= std::chrono::milliseconds(100),
+              "transient read sharing recovers without substituting an empty hub");
+        release_read.join();
+        {
+            DenyRead persistent(target);
+            const auto began_read = Clock::now();
+            bool rejected = false;
+            try { osw::lab::detail::read_hub_file(target); }
+            catch (const osw::lab::FailureError &error) {
+                rejected = error.failure == osw::lab::Failure::read_busy;
+            }
+            check(rejected && Clock::now() - began_read >= std::chrono::milliseconds(450) &&
+                      Clock::now() - began_read < std::chrono::seconds(2),
+                  "persistent read sharing is bounded and specifically classified");
+        }
+        check(read(target) == "new" && read(temporary) == "later",
+              "failed reads preserve the existing hub and staged bytes");
+        const auto permanent_read = Clock::now();
+        bool read_failed = false;
+        try { osw::lab::detail::read_hub_file(root); }
+        catch (const osw::lab::FailureError &error) {
+            read_failed = error.failure == osw::lab::Failure::read_open;
+        }
+        check(read_failed && Clock::now() - permanent_read < std::chrono::milliseconds(400),
+              "permanent read access error is not retried or treated as absence");
+        check(!osw::lab::detail::read_hub_file(root / "absent.json"),
+              "only genuine file absence permits an explicit creation decision");
         cleanup();
         std::cout << "Windows transient sharing recovery and permanent failure preservation passed\n";
         return 0;

@@ -1,5 +1,6 @@
 #include "lab/backend.hpp"
 #include "lab/file_replace.hpp"
+#include "lab/file_read.hpp"
 #include "core/credential.hpp"
 #include "core/local_io.hpp"
 #include "core/p2p.hpp"
@@ -56,7 +57,7 @@ class Store {
 #endif
   public:
     Json state;
-    explicit Store(const std::filesystem::path &root) : path(root / "hub.json") {
+    explicit Store(const std::filesystem::path &root, bool allow_create = false) : path(root / "hub.json") {
         std::filesystem::create_directories(root);
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 #ifdef _WIN32
@@ -64,40 +65,38 @@ class Store {
                            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
         if (lock == INVALID_HANDLE_VALUE)
-            throw std::runtime_error("lab hub lock");
+            throw FailureError(Failure::lock);
         while (!LockFileEx(lock, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0,
                            &overlapped)) {
             if (std::chrono::steady_clock::now() > deadline) {
                 CloseHandle(lock);
-                throw std::runtime_error("lab hub busy");
+                throw FailureError(Failure::busy);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 #else
         lock = open((root / "hub.lock").c_str(), O_CREAT | O_RDWR, 0600);
         if (lock < 0)
-            throw std::runtime_error("lab hub lock");
+            throw FailureError(Failure::lock);
         while (flock(lock, LOCK_EX | LOCK_NB)) {
             if (std::chrono::steady_clock::now() > deadline) {
                 close(lock);
-                throw std::runtime_error("lab hub busy");
+                throw FailureError(Failure::busy);
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 #endif
         try {
-            std::ifstream file(path, std::ios::binary);
-            if (file) {
-                file.seekg(0, std::ios::end);
-                auto size = file.tellg();
-                file.seekg(0);
-                if (size > 8 * 1024 * 1024)
-                    throw std::runtime_error("lab hub limit");
-                file >> state;
-            } else
+            const auto bytes = detail::read_hub_file(path);
+            if (bytes)
+                state = Json::parse(*bytes, nullptr, false);
+            else if (allow_create)
                 state = {{"next", 1000000}, {"users", Json::object()}, {"lobbies", Json::object()}};
-            if (!state.is_object() || !state.contains("users") || !state.contains("lobbies"))
-                throw std::runtime_error("invalid lab hub");
+            else
+                throw FailureError(Failure::missing);
+            if (!state.is_object() || !state.contains("users") || !state["users"].is_object() ||
+                !state.contains("lobbies") || !state["lobbies"].is_object())
+                throw FailureError(Failure::invalid);
             std::vector<std::string> stale;
             for (auto &[id, user] : state["users"].items())
                 if (!process_alive(user.value("pid", std::uint64_t{})))
@@ -143,14 +142,18 @@ class Store {
     void save() {
         auto text = state.dump();
         if (text.size() > 8 * 1024 * 1024)
-            throw std::runtime_error("lab hub limit");
+            throw FailureError(Failure::limit);
         auto temporary = path;
         temporary += ".tmp";
         {
             std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
             out << text;
+            out.flush();
             if (!out)
-                throw std::runtime_error("lab hub write");
+                throw FailureError(Failure::write);
+            out.close();
+            if (!out)
+                throw FailureError(Failure::write);
         }
 #ifdef _WIN32
         detail::replace_hub_file(temporary, path);
@@ -174,7 +177,7 @@ class LabSocial final : public core::Social {
             return;
         auto &events = state["users"][target]["events"];
         if (events.size() >= 256)
-            throw std::runtime_error("lab receiver overflow");
+            throw FailureError(Failure::receiver_overflow);
         events.push_back(std::move(event));
     }
     void broadcast(Json &state, std::uint64_t lobby, core::SocialEvent::Kind kind,
@@ -212,9 +215,9 @@ class LabSocial final : public core::Social {
     LabSocial(const core::Config &config)
         : root(std::u8string(config.lab_root.begin(), config.lab_root.end())),
           self(std::to_string(config.lab_account_id)), account(config.lab_account_id) {
-        Store store(root);
+        Store store(root, true);
         if (store.state["users"].contains(self))
-            throw std::runtime_error("lab identity already active");
+            throw FailureError(Failure::identity_active);
         store.state["users"][self] = {
             {"pid", process_id()},
             {"name", config.online_id.empty() ? "LabPlayer" : config.online_id},
@@ -234,7 +237,7 @@ class LabSocial final : public core::Social {
     std::vector<core::SocialEvent> poll() {
         Store store(root);
         if (!store.state["users"].contains(self))
-            throw std::runtime_error("lab identity lost");
+            throw FailureError(Failure::identity_lost);
         auto &events = store.state["users"][self]["events"];
         for (auto &event : events) {
             auto user = core::parse_decimal_id(event.value("user", std::string{})).value_or(0);
@@ -504,7 +507,7 @@ class LabBackend final : public core::Backend {
                  0};
         platform = std::make_unique<core::Platform>(config, value, *social);
         if (!platform->start())
-            throw std::runtime_error("lab platform start");
+            throw FailureError(Failure::platform_start);
         p2p = std::make_unique<core::P2P>(config, value, *social);
     }
     core::Identity identity() const override { return value; }
