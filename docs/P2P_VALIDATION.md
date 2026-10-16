@@ -519,3 +519,71 @@ No installed DLL, profile, live game, publisher process or Steam session was
 changed by the library work. Actual consumer checks and a human game retest are
 separate; this result does not establish how much of the reported lobby wait
 the transfer accounts for.
+
+## Lab identical metadata publication (2026-10-16)
+
+After the blob-window candidate, the user reported faster invitation entry
+without a precise duration, but a remaining wait before both players appeared
+in a public lobby. Publisher source review identified repeated identical
+directory updates. The library publishes nine metadata keys per directory
+update; the Lab implementation previously rewrote the hub and queued data
+events for each key even when the value was unchanged. This is concrete
+avoidable work, not proof of the whole observed game's delay.
+
+The narrow correction changes only `LabSocial::set_lobby_data`: it acquires the
+existing lock, reads current state and verifies the owner before comparing an
+existing string. Equality returns success without mutation, save or broadcast.
+A missing key, even with a requested empty value, still publishes normally.
+There is no cache, publisher deduplication, protocol/API change, Steam change,
+timer change or altered stale-user polling. Failed current-state reads still
+fail closed rather than reporting cached success.
+
+The same private Python harness used two actual Lab contexts through the public
+C API, with virtual endpoints enabled, fresh UUID hub directories, identical
+synthetic metadata and the existing worker cadence. Each DLL ran ten cycles;
+the first two were warmup. The runs were adjacent, before then after, on this
+Windows machine. DLL hashes were checked before and after each run. These are
+real Lab file-backend timings, with no publisher child, game or Steam process:
+
+| Operation | Samples | Previous median [range], ms | Candidate median [range], ms |
+| --- | ---: | ---: | ---: |
+| Identical directory update | 16 | 103.217 [78.556–128.189] | 44.707 [30.866–72.473] |
+| Changed directory update | 8 | 101.476 [70.754–133.496] | 63.420 [46.081–77.059] |
+| Create directory room | 8 | 94.337 [73.787–106.317] | 90.734 [73.697–107.640] |
+
+Process write-operation medians fell from 11 to 2 for identical updates and
+from 11 to 4 for changed updates. These counters include both workers' normal
+polling, so they are not exact setter-only counts. Changed updates also benefit
+because their unchanged namespace keys need no write. Creation still publishes
+new keys. A separate direct Lab fixture, with no background worker, confirms
+zero writes for the identical setter itself, exact preservation of queued hub
+bytes, no extra data event, missing-versus-empty handling, denial of non-owner
+updates, later real updates, read-failure handling and deleted-room rejection.
+
+The isolated MSVC static/shared build in `build/lab-metadata-candidate/` used
+two jobs. `platform-contracts`, `lab-file-sharing`, `lab-state-read-failure`,
+`lab-metadata-publication` and `shared-load` passed in the initial sandbox run.
+`p2p-cross-process-lab` initially failed its UDP carrier-delivery deadline there;
+the exact same binaries and timeout passed with host loopback access in 18.10
+seconds. No code change was needed, and the initial run is not reported as a
+clean six-test pass. The coordinator also ran the actual DLL with the unchanged
+publisher in the two-child party fixture: authentication, simulated invite/
+accept, follower selection, directory/departure, canonical routes and
+bidirectional UDP passed. That consumer fixture remains separate from original
+game and live Steam acceptance.
+
+Private evidence: `out/lab-metadata-candidate-build.log`,
+`out/lab-metadata-cross-process-host.log`, `out/lab-directory-timing-before.json`
+and `out/lab-directory-timing-after.json`. The timing harness is
+`out/lab-directory-timing.py --dll <library-path>`; it emits only aggregate
+results. The optional consumer log belongs to the publisher project at
+`.cache/p2p-probe/lab-metadata-party-host.log`. No consumer checkout is needed
+to build or run the library's own tests.
+
+Previous DLL SHA-256:
+`8c9157a32f9faf396fdac0ba5a7b19d271e4eaf8880936f07f4939b6b026a1f4`.
+Candidate DLL SHA-256:
+`251c4d97a305ef547785bfa5fbdefb36009961de48287b2a676126c4ca488e02`.
+The previous/pinned DLL and profiles were not changed. No active profile hub
+was read. The measured benefit is Lab-specific; the fraction of the public
+game-entry wait attributable to it is still unknown.

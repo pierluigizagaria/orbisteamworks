@@ -41,6 +41,10 @@ if(WIN32)
   target_include_directories(osw-lab-state-tests PRIVATE ../src)
   target_link_libraries(osw-lab-state-tests PRIVATE orbisteamworks)
   add_test(NAME lab-state-read-failure COMMAND osw-lab-state-tests)
+  add_executable(osw-lab-metadata-tests lab_metadata_tests.cpp)
+  target_include_directories(osw-lab-metadata-tests PRIVATE ../src)
+  target_link_libraries(osw-lab-metadata-tests PRIVATE orbisteamworks nlohmann_json::nlohmann_json)
+  add_test(NAME lab-metadata-publication COMMAND osw-lab-metadata-tests)
 endif()
 
 # These fixtures are our own code, never Steam SDK files. They are only passed

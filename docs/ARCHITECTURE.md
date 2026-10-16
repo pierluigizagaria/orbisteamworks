@@ -21,6 +21,14 @@ calls the SDK subset for invisible lobbies and Networking Messages. No publisher
 or native-host implementation is copied into the library. See
 [P2P_VALIDATION.md](P2P_VALIDATION.md) for evidence and remaining acceptance.
 
+Lab lobby metadata publication reads the current hub under its existing lock
+and checks the current owner on every call. An existing string equal to the
+requested value succeeds without rewriting the hub or queuing a data event;
+a missing key, including a new empty value, still publishes normally. This is
+a Lab storage optimization, with no cache, API/wire change or Steam behavior
+change. Read failures still fail closed and ordinary polling retains its
+existing stale-user cleanup.
+
 Updated: 2026-10-15, revision 3 with PoC implementation notes. The runtime Steam
 loader, C API, initial session/friend core, shadPS4 adapter and publisher helper
 integration are implemented locally. See INTEGRATION_WORKLOG.md for measured

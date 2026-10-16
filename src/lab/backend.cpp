@@ -379,6 +379,10 @@ class LabSocial final : public core::Social {
         auto e = lobby(store, id);
         if (!e || e->value("owner", std::string{}) != self)
             return false;
+        const auto current = (*e)["data"].find(key);
+        if (current != (*e)["data"].end() && current->is_string() &&
+            current->get_ref<const std::string &>() == value)
+            return true;
         (*e)["data"][key] = value;
         broadcast(store.state, id, core::SocialEvent::data);
         store.save();
