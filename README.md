@@ -90,7 +90,7 @@ a shared party and a race between two Steam accounts are not verified yet,
 nor is Linux. The [feasibility document](docs/FEASIBILITY.md#acceptance-gates)
 lists the acceptance gates.
 
-The native P2P library additionally passes 31 Windows static/shared contract
+The native P2P candidate additionally passes 32 Windows static/shared contract
 tests, including a two-process simulated backend and hidden-child ownership.
 These results do not establish a Steam peer race or WAN/SDR acceptance.
 

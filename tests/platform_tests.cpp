@@ -1,5 +1,6 @@
 #include "core/blobs.hpp"
 #include "core/multipart.hpp"
+#include "core/p2p.hpp"
 #include "core/platform.hpp"
 #include "exception_observer.hpp"
 #include <iostream>
@@ -82,6 +83,105 @@ struct Fixture : Social {
         return true;
     }
 };
+void p2p_follow_lifecycle() {
+    Config config;
+    config.title = "5760";
+    config.build = "1.21";
+    config.realm = "follow-fixture";
+    Fixture social;
+    const Id party = lobby_id, first = lobby_id + 1, second = lobby_id + 2;
+    for (auto room : {first, second}) {
+        social.data[room] = {{"osw_room", "osw/1"},       {"osw_title", config.title},
+                             {"osw_build", config.build}, {"osw_realm", config.realm},
+                             {"osw_room_protocol", "1"},  {"osw_room_owner", std::to_string(peer)},
+                             {"osw_room_metadata", "{}"}};
+        social.owners[room] = peer;
+        social.users[room] = {peer};
+    }
+    social.member_values[party][peer]["osw.room"] = std::to_string(first);
+    P2P p2p(config, {true, self, "Local"}, social);
+    p2p.set_party({party, peer, {self, peer}});
+    auto submit = [&](Id id, const char *op, Id room) {
+        p2p.submit(
+            {id, OSW_P2P, 30000, Json{{"op", op}, {"room_id", std::to_string(room)}}.dump()});
+    };
+    auto result = [&](Id id) {
+        auto update = p2p.poll();
+        check(update.results.size() == 1 && update.results.front().id == id,
+              "P2P lifecycle returns the requested completion");
+        return update.results.front();
+    };
+    auto enter = [&](Id call, Id room) {
+        social.users[room] = {peer, self};
+        p2p.process({{SocialEvent::entered, call, room, 0, true}});
+    };
+    p2p.process({});
+    const auto abandoned = social.call;
+    check(social.joins == 1, "party selection starts automatic join");
+    submit(1, "directory.leave", first);
+    check(result(1).status == OSW_UNAVAILABLE, "leave cancels a not-yet-entered selection");
+    submit(2, "directory.join", first);
+    auto blocked = result(2);
+    check(blocked.status == OSW_UNAVAILABLE && Json::parse(blocked.metadata)["error"] == "busy" &&
+              social.joins == 1,
+          "rejoin cannot overlap the abandoned provider join");
+    enter(abandoned, first);
+    check(social.users[first] == std::vector<Id>{peer} && social.joins == 1,
+          "late automatic completion leaves and does not refollow suppressed selection");
+    submit(3, "directory.join", first);
+    check(social.joins == 2, "explicit rejoin resumes after abandoned completion cleanup");
+    enter(social.call, first);
+    check(result(3).status == OSW_OK && social.users[first].size() == 2,
+          "fresh explicit join retains membership");
+    social.member_values[party][peer]["osw.room"] = std::to_string(second);
+    p2p.process({});
+    check(social.users[first] == std::vector<Id>{peer} && social.joins == 3,
+          "explicitly rejoined follower leaves old selection when leader moves");
+    enter(social.call, second);
+    check(social.users[second].size() == 2, "follower enters the new selection");
+    submit(4, "directory.leave", second);
+    check(result(4).status == OSW_OK, "follower explicitly leaves new selection");
+    submit(5, "directory.join", second);
+    enter(social.call, second);
+    check(result(5).status == OSW_OK, "second explicit rejoin succeeds");
+    p2p.set_party({});
+    p2p.process({});
+    check(social.users[second] == std::vector<Id>{peer},
+          "party exit leaves an explicitly rejoined followed room");
+
+    Fixture delayed;
+    P2P bounded(config, {true, self, "Local"}, delayed);
+    auto join_delayed = [&](Id id) {
+        const auto room = lobby_id + 100 + id;
+        delayed.data[room] = social.data[first];
+        delayed.owners[room] = peer;
+        delayed.users[room] = {peer};
+        bounded.submit({id, OSW_P2P, 30000,
+                        Json{{"op", "directory.join"}, {"room_id", std::to_string(room)}}.dump()});
+    };
+    for (Id id = 1; id <= 128; ++id) {
+        join_delayed(id);
+        bounded.cancel(id);
+    }
+    join_delayed(129);
+    auto capped = bounded.poll();
+    check(delayed.joins == 128 && capped.results.size() == 1 &&
+              capped.results[0].status == OSW_UNAVAILABLE &&
+              Json::parse(capped.results[0].metadata)["error"] == "busy",
+          "missing abandoned callbacks bound admission without forgetting unsafe joins");
+    const auto released = lobby_id + 101;
+    delayed.users[released] = {peer, self};
+    bounded.process({{SocialEvent::entered, 1, released, 0, true}});
+    join_delayed(129);
+    check(delayed.joins == 129 && delayed.users[released] == std::vector<Id>{peer},
+          "late callback cleanup releases bounded admission capacity");
+    const auto recovered = lobby_id + 229;
+    delayed.users[recovered] = {peer, self};
+    bounded.process({{SocialEvent::entered, delayed.call, recovered, 0, true}});
+    auto completed = bounded.poll();
+    check(completed.results.size() == 1 && completed.results[0].status == OSW_OK,
+          "new join succeeds after the abandoned callback arrives");
+}
 Request request(Id id, const std::string &method, const std::string &path,
                 const std::string &body = {}, const std::string &type = "application/json") {
     return {id, OSW_WEBAPI, 30000,
@@ -306,6 +406,7 @@ void diagnostic_friends() {
 }
 int main() {
     try {
+        p2p_follow_lifecycle();
         friend_display_names();
         diagnostic_friends();
         Config config{"", "LocalName", "5760", "1.21", "normal"};

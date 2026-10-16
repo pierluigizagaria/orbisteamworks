@@ -88,6 +88,20 @@ that selection; provisional invitation joins do not qualify. Create/join waits
 within its existing deadline for the committed followers to join. Owner change
 closes the room, rather than migrating its publisher engine silently.
 Timeout or cancellation rolls back the introduced room membership and selection.
+An explicit `directory.leave` by a follower suppresses automatic following of
+that same selected room. Retained platform-party membership alone does not
+undo the leave. A valid explicit create/search/join request, a different selected
+room, or a new party/owner context permits following again. There is no timer
+that silently re-enables membership. Pending automatic joins are abandoned on
+an explicit leave and any later successful completion is left immediately.
+A new join to the same room returns `busy` until that abandoned provider call
+completes and is cleaned up, so a late callback cannot remove a newer membership.
+Pending validations, provider calls and abandoned calls share a limit of 128;
+admission returns `busy` at that limit. Abandoned calls are never forgotten by
+a timer. If the provider permanently loses their callbacks, affected rooms stay
+busy, and exhausting the shared limit requires a new library context to recover.
+An explicit rejoin to the leader's selection resumes following, including leave
+when the leader changes rooms or the local player leaves the platform party.
 
 Private advertisements use dedicated reliable channel 49 with an exact
 protocol/title/build/realm envelope. Only current in-game friends are accepted.

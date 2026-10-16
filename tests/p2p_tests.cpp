@@ -364,6 +364,50 @@ int main(int argc, char **argv) {
             check(returned["payload"] == osw::core::base64(bytes) &&
                       returned["port"] == friend_endpoint["port"],
                   "promotion preserves the advertised friend socket");
+            auto party_room_id = party_room["result"]["room_id"];
+            auto leave_selected = [&] {
+                check(remote(peer, {{"metadata",
+                                     {{"op", "directory.leave"},
+                                      {"room_id", party_room_id}}}})["status"] == 0,
+                      "follower explicitly leaves selected room");
+                for (int pass = 0; pass < 8; ++pass) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    check(local.call({{"op", "directory.members"},
+                                      {"room_id", party_room_id}})["result"]["members"]
+                                  .size() == 1,
+                          "explicit leave is not undone by retained party selection");
+                    auto events = remote(peer, {{"metadata", {{"op", "events.poll"}}}});
+                    for (auto &event : events["result"]["events"])
+                        check(event["event"] != "room.selected", "no automatic rejoin after leave");
+                }
+            };
+            leave_selected();
+            auto rejoined = remote(
+                peer, {{"metadata", {{"op", "directory.join"}, {"room_id", party_room_id}}}});
+            check(rejoined["status"] == 0 && rejoined["result"]["members"].size() == 2,
+                  "explicit join restores membership after a leave");
+            leave_selected();
+            check(remote(peer, {{"metadata",
+                                 {{"op", "directory.search"},
+                                  {"metadata", {{"playlist", "party"}}}}}})["status"] == 0,
+                  "explicit search supplies a new follow intent");
+            auto rejoin_end = Clock::now() + std::chrono::seconds(3);
+            while (local
+                       .call({{"op", "directory.members"},
+                              {"room_id", party_room_id}})["result"]["members"]
+                       .size() != 2) {
+                check(Clock::now() < rejoin_end, "explicit search re-enables party following");
+                pause();
+            }
+            remote(peer, {{"metadata", {{"op", "events.poll"}}}});
+            leave_selected();
+            check(local.call({{"op", "directory.leave"}, {"room_id", party_room_id}})["status"] ==
+                      0,
+                  "leader clears prior selection");
+            auto new_selection =
+                local.call({{"op", "directory.create"}, {"metadata", {{"playlist", "new-party"}}}});
+            check(new_selection["status"] == 0 && new_selection["result"]["members"].size() == 2,
+                  "a genuinely new leader selection re-enables automatic following");
             auto cancelled = local.call({{"op", "directory.create"},
                                          {"capacity", 1},
                                          {"metadata", {{"playlist", "cancel-test"}}}});

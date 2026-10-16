@@ -48,9 +48,10 @@ struct P2P::Impl {
     std::map<std::uint64_t, Pending> pending;
     std::map<std::uint64_t, Pending> validating, awaiting_party;
     std::map<std::uint64_t, std::uint64_t> completed_rooms;
-    std::set<std::uint64_t> abandoned;
+    std::map<std::uint64_t, std::uint64_t> abandoned;
     Party party;
     std::uint64_t following = 0, following_pending = 0;
+    std::uint64_t suppressed_selection = 0;
     Clock::time_point following_retry{};
     std::set<std::uint64_t> rooms;
     std::map<std::uint64_t, std::string> room_snapshots;
@@ -200,8 +201,19 @@ struct P2P::Impl {
         return social.set_lobby_data(room, "osw_room_owner", idstr(identity.account_id)) &&
                social.set_lobby_data(room, "osw_room_metadata", metadata.dump());
     }
+    void track_follow(std::uint64_t room) {
+        if (party.lobby && party.owner != identity.account_id &&
+            social.member_data(party.lobby, party.owner, "osw.room") == idstr(room) &&
+            std::find(party.members.begin(), party.members.end(), party.owner) !=
+                party.members.end()) {
+            if (following && following != room)
+                rollback(following);
+            following = room;
+        }
+    }
     void joined(std::uint64_t room, Pending value) {
         rooms.insert(room);
+        track_follow(room);
         if (value.request) {
             if (completed_rooms.size() >= 128)
                 completed_rooms.erase(completed_rooms.begin());
@@ -236,6 +248,28 @@ struct P2P::Impl {
             social.member_data(party.lobby, identity.account_id, "osw.room") == idstr(room))
             social.set_member_data(party.lobby, "osw.room", "");
         emit({{"event", "room.closed"}, {"room_id", idstr(room)}});
+    }
+    void suppress_follow(std::uint64_t room) {
+        if (!party.lobby || party.owner == identity.account_id ||
+            social.member_data(party.lobby, party.owner, "osw.room") != idstr(room))
+            return;
+        suppressed_selection = room;
+        if (following == room)
+            following = 0;
+        if (following_pending == room) {
+            following_pending = 0;
+            auto validating_room = validating.find(room);
+            if (validating_room != validating.end() &&
+                validating_room->second.command.value("_autojoin", false))
+                validating.erase(validating_room);
+            for (auto it = pending.begin(); it != pending.end();)
+                if (idfield(it->second.command, "room_id") == room &&
+                    it->second.command.value("_autojoin", false)) {
+                    abandoned[it->first] = room;
+                    it = pending.erase(it);
+                } else
+                    ++it;
+        }
     }
     void execute(Json command, std::uint64_t request) {
         try {
@@ -345,6 +379,10 @@ struct P2P::Impl {
                 return;
             }
             if (op == "directory.create" || op == "directory.search") {
+                if (pending.size() + validating.size() + abandoned.size() >= 128) {
+                    reply(command, request, false, {}, "busy");
+                    return;
+                }
                 auto metadata = command.value("metadata", Json::object());
                 int capacity = command.value("capacity", 8);
                 int limit = command.value("limit", 32);
@@ -367,6 +405,7 @@ struct P2P::Impl {
                     return;
                 }
                 pending[call] = {command, request, Clock::now() + std::chrono::seconds(25), 1};
+                suppressed_selection = 0;
                 return;
             }
             auto room = idfield(command, "room_id");
@@ -394,6 +433,8 @@ struct P2P::Impl {
             }
             if (op == "directory.join") {
                 if (awaiting_party.contains(room) || validating.contains(room) ||
+                    std::any_of(abandoned.begin(), abandoned.end(),
+                                [&](const auto &entry) { return entry.second == room; }) ||
                     std::any_of(pending.begin(), pending.end(), [&](const auto &entry) {
                         return idfield(entry.second.command, "room_id") == room;
                     })) {
@@ -405,7 +446,14 @@ struct P2P::Impl {
                     return;
                 }
                 if (rooms.contains(room)) {
+                    if (!command.value("_autojoin", false))
+                        suppressed_selection = 0;
+                    track_follow(room);
                     reply(command, request, true, record(room));
+                    return;
+                }
+                if (pending.size() + validating.size() + abandoned.size() >= 128) {
+                    reply(command, request, false, {}, "busy");
                     return;
                 }
                 Pending value{command, request, Clock::now() + std::chrono::seconds(25), 1};
@@ -416,6 +464,8 @@ struct P2P::Impl {
                         return;
                     }
                     validating[room] = std::move(value);
+                    if (!command.value("_autojoin", false))
+                        suppressed_selection = 0;
                     return;
                 }
                 auto call = social.join_lobby(room);
@@ -424,8 +474,12 @@ struct P2P::Impl {
                     return;
                 }
                 pending[call] = std::move(value);
+                if (!command.value("_autojoin", false))
+                    suppressed_selection = 0;
                 return;
             }
+            if (op == "directory.leave" && room)
+                suppress_follow(room);
             if (!room || !member(room, identity.account_id)) {
                 reply(command, request, false, {}, "not_member");
                 return;
@@ -632,8 +686,10 @@ struct P2P::Impl {
             auto selected =
                 parse_decimal_id(social.member_data(party.lobby, party.owner, "osw.room"))
                     .value_or(0);
+            if (suppressed_selection && selected != suppressed_selection)
+                suppressed_selection = 0;
             if (selected && !rooms.contains(selected) && selected != following_pending &&
-                Clock::now() >= following_retry) {
+                selected != suppressed_selection && Clock::now() >= following_retry) {
                 following_pending = selected;
                 execute(
                     {{"op", "directory.join"}, {"room_id", idstr(selected)}, {"_autojoin", true}},
@@ -679,7 +735,7 @@ struct P2P::Impl {
         for (auto it = pending.begin(); it != pending.end();) {
             if (Clock::now() >= it->second.deadline) {
                 reply(it->second.command, it->second.request, false, {}, "timeout");
-                abandoned.insert(it->first);
+                abandoned[it->first] = idfield(it->second.command, "room_id");
                 it = pending.erase(it);
             } else
                 ++it;
@@ -826,11 +882,15 @@ void P2P::submit(Request request) {
     }
 }
 void P2P::process(const std::vector<SocialEvent> &events) { p->process(events); }
-void P2P::set_party(Party party) { p->party = std::move(party); }
+void P2P::set_party(Party party) {
+    if (party.lobby != p->party.lobby || party.owner != p->party.owner)
+        p->suppressed_selection = 0;
+    p->party = std::move(party);
+}
 void P2P::cancel(std::uint64_t request) {
     for (auto it = p->pending.begin(); it != p->pending.end();)
         if (it->second.request == request) {
-            p->abandoned.insert(it->first);
+            p->abandoned[it->first] = idfield(it->second.command, "room_id");
             it = p->pending.erase(it);
         } else
             ++it;

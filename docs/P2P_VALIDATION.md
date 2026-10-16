@@ -177,3 +177,54 @@ scoped P1 evidence. Original-game Steam P2 and a two-player P3 race remain pendi
 
 A pass requires both real Steam peers and original-game evidence. A synthetic
 packet round trip, a single-account lobby or two lab identities cannot satisfy it.
+
+## Follow-up candidate: explicit party departure
+
+The publisher's real two-child lab probe exposed a lifecycle defect beyond the
+initial positive-flow tests: after a party follower closed its actual publisher
+TCP connection, its explicit directory leave was immediately undone by automatic
+following of the retained party selection. The owner could miss the short-lived
+departure. Ordinary non-party disconnect already passed the publisher probe.
+
+The library now remembers that explicit leave until new intent is supplied:
+valid create/search/join, a genuinely different selected room, or a new party or
+owner context. It also abandons an in-flight automatic join. New regressions
+verify stable absence, explicit rejoin, search re-enabling and a new leader
+selection. Controlled provider callbacks verify that an explicit rejoin resumes
+party-follow tracking and leaves the room when the leader moves or the party
+ends. Rejoining an abandoned join's room is busy until its callback is cleaned
+up, preventing a late callback from removing a newer membership. Pending
+validations, provider calls and abandoned calls share a bound of 128; a regression
+fills that bound and verifies admission recovers after callback cleanup. A
+permanently missing callback keeps the affected room busy; exhausting the shared
+bound requires a fresh library context. No session lifetime or idle timeout was
+introduced, and tombstones are not discarded by a timer.
+
+An isolated Release candidate in `build/p2p-candidate/` passed all 32 suites in
+19.38 seconds, including the pure child-wait and controlled party lifecycle tests.
+Candidate DLL SHA-256:
+`bc172ccc8beddf8f2045d4420407a660ce4484de12a3f456ab037c7663f110e1`.
+The human-operated game's `build/p2p/orbisteamworks.dll` remains at `bd3f69...`
+above and was not replaced or interrupted.
+
+The rebuilt `osw-p2p-check` (statically linked to the same candidate sources)
+repeated the real single-account Steam check at 2026-10-16 07:53:42 UTC. It exited
+0 in 3.728 seconds: invisible lobby creation, exact namespace/owner/member
+readback, one matching search result, metadata update and leave. Tool SHA-256:
+`c435de1967793d4b52139452a80365bad852850ec1744b32181b47365a74453a`.
+The user-supplied SDK runtime is the same 1.65 binary pinned above. Private log
+`runtime/p2p-live-20261016/candidate-single-account.log` SHA-256:
+`f5cc68d7458e2ff536df7e5410b866c2d11a375d50c7cd4aab2a08e951011002`.
+The check contains no companion, second Steam account, SDR transport or game
+acceptance claim.
+
+Both actual two-child publisher lab probes passed again with this candidate and
+publisher v4 (`55ebb84`, executable SHA-256
+`0dcb7fc98b406b43602d6cc03addcb2ea262ea2451226a92dcd8c05ccb20df91`).
+They verify signed admission, encrypted lobby requests, local statistics privacy,
+bidirectional opaque UDP, and actual follower TCP disconnect followed by the
+owner's 2006 seat-removal push. The ordinary room-join and committed-party modes
+both pass; the latter includes simulated invite acceptance and party selection.
+The publisher separately fixes event/query snapshot ordering. These tests run
+real publisher child executables but use the explicit lab platform backend;
+they do not qualify two-account Steam or original-game multiplayer.
