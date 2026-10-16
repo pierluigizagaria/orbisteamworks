@@ -86,12 +86,20 @@ sandbox passed. No firewall, adapter or other system setting was changed.
 
 ## Live and remaining acceptance
 
-`osw-p2p-check <absolute user-supplied Steam API library path>` is a bounded
+`osw-p2p-check [--virtual-endpoints] <absolute user-supplied Steam API library path>` is a bounded
 single-account diagnostic. It creates an invisible room, checks namespace and
 owner/member readback, performs filtered search, updates metadata and leaves.
 It prints no account IDs, room IDs, tokens or payloads. Coordinate its use with
 other Steam hosts: the library intentionally permits only one Steam context in
 a process, and one Steam client/account cannot qualify two live peers.
+
+The optional `--virtual-endpoints` flag enables canonical endpoints through the
+public API before startup and requires copied local endpoint readiness before
+testing protocol 2 directory operations. Omitting it preserves the existing
+legacy invocation and protocol 1. The search check requires the just-created
+room ID to appear exactly once; empty results, unrelated rooms or duplicates
+cannot print PASS. Prejoin owner/member fields are not required. A successful
+search alone does not establish that distance widening occurred.
 
 The real single-account diagnostic passed on 2026-10-16 after coordinating
 exclusive use of the Steam client. Using the pinned executable and user-supplied
@@ -177,7 +185,8 @@ scoped P1 evidence. Original-game Steam P2 and a two-player P3 race remain pendi
    Both peers must use the same mode: virtual protocol 2 and legacy protocol 1
    are isolated for friends, parties, rooms, advertisements and peer carriers.
    No central helper or remote publisher is required.
-3. First run the single-account diagnostic on each PC separately. Stop it before
+3. First run the single-account diagnostic with `--virtual-endpoints` on each
+   PC separately to check the current protocol 2 mode. Stop it before
    launching the game. Verify Online identity, local admission and the in-game
    friend list on both game processes. Confirm a player from another realm is
    absent. Record observations with pseudonyms and redact all private payloads.
@@ -360,3 +369,14 @@ It used the same library source `93c4b5c`/DLL `bb6bb925...` and publisher
 one-account host API/companion path with virtual endpoints enabled, not a peer
 exchange. Original-game Join/race acceptance and two-account Steam transport
 remain unqualified. This documentation follow-up does not change those binaries.
+
+The standalone P4 diagnostic was subsequently updated to support the explicit
+`--virtual-endpoints` mode and to fail unless search returns its created room
+exactly once. Only `osw-p2p-check` was rebuilt in `build/virtual-candidate/`;
+the DLL hash above stayed unchanged. Five invalid-CLI checks (missing library,
+flag only, unknown option, duplicate mode, and extra library) all returned the
+usage error before provider startup. Private evidence:
+`out/p2p-check-virtual-build.log` and `out/p2p-check-virtual-cli.json`.
+Tool SHA-256:
+`c80bfbf8c4885c529e2b69593a29154f055d6408ab5eaa0c43a1b7d7d9f4967d`.
+These build/CLI checks do not themselves exercise the live Steam directory.
