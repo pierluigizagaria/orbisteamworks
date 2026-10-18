@@ -413,6 +413,32 @@ class LabSocial final : public core::Social {
                 out.push_back(core::decimal_id(user));
         return out;
     }
+    std::optional<core::LobbySnapshot> lobby_snapshot(std::uint64_t id,
+                                                     const std::vector<std::string> &keys,
+                                                     bool include_membership) override {
+        Store store(root);
+        const auto e = lobby(store, id);
+        core::LobbySnapshot out;
+        for (const auto &key : keys)
+            out.data[key].read([&] {
+                return e ? (*e)["data"].value(key, std::string{}) : std::string{};
+            });
+        if (include_membership) {
+            out.owner.read([&] {
+                return e && (*e)["members"].contains(self)
+                    ? core::parse_decimal_id(e->value("owner", std::string{})).value_or(0)
+                    : 0;
+            });
+            out.members.read([&] {
+                std::vector<std::uint64_t> members;
+                if (e && (*e)["members"].contains(self))
+                    for (const auto &[user, value] : (*e)["members"].items())
+                        members.push_back(core::decimal_id(user));
+                return members;
+            });
+        }
+        return out;
+    }
     std::string member_data(std::uint64_t id, std::uint64_t user, const std::string &key) override {
         Store store(root);
         auto e = lobby(store, id);

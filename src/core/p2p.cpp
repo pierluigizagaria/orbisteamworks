@@ -135,24 +135,40 @@ struct P2P::Impl {
                 out["osw_room_" + key] = scalar(value);
         return out;
     }
-    bool matches(std::uint64_t room, bool joined = true) {
+    std::optional<LobbySnapshot> room_state(std::uint64_t room, bool joined) {
+        static const std::vector<std::string> keys{
+            "osw_room", "osw_title", "osw_build", "osw_realm", "osw_room_protocol",
+            "osw_room_owner", "osw_room_metadata"};
+        return social.lobby_snapshot(room, keys, joined);
+    }
+    bool matches(std::uint64_t room, const std::optional<LobbySnapshot> &state, bool joined) {
+        const auto data = [&](const std::string &key) {
+            return state ? state->data.at(key).get() : social.lobby_data(room, key);
+        };
         for (auto &[key, value] : filters(Json::object()))
-            if (social.lobby_data(room, key) != value)
+            if (data(key) != value)
                 return false;
-        auto owner = parse_decimal_id(social.lobby_data(room, "osw_room_owner")).value_or(0);
-        auto data = social.lobby_data(room, "osw_room_metadata");
-        if (!owner || data.size() > 256 || !safe_metadata(Json::parse(data, nullptr, false)))
+        auto owner = parse_decimal_id(data("osw_room_owner")).value_or(0);
+        const auto metadata = data("osw_room_metadata");
+        if (!owner || metadata.size() > 256 || !safe_metadata(Json::parse(metadata, nullptr, false)))
             return false;
         // Steam exposes the actual owner and member list only to lobby members.
-        return !joined || (owner == social.owner(room) && social.members(room).size() <= 16);
+        return !joined ||
+               (owner == (state ? state->owner.get() : social.owner(room)) &&
+                (state ? state->members.get().size() : social.members(room).size()) <= 16);
+    }
+    bool matches(std::uint64_t room, bool joined = true) {
+        return matches(room, room_state(room, joined), joined);
     }
     bool member(std::uint64_t room, std::uint64_t peer) {
         if (!room)
             return friends.contains(peer);
-        if (!rooms.contains(room) || !matches(room))
+        if (!rooms.contains(room))
             return false;
-        auto list = social.members(room);
-        return std::find(list.begin(), list.end(), peer) != list.end();
+        const auto state = room_state(room, true);
+        if (!matches(room, state, true)) return false;
+        const auto members = state ? state->members.get() : social.members(room);
+        return std::find(members.begin(), members.end(), peer) != members.end();
     }
     bool friend_authorized(const Proxy &proxy) const {
         return proxy.friend_scope || !proxy.advertisement_grants.empty();
@@ -197,19 +213,25 @@ struct P2P::Impl {
                 {"realm", config.realm}};
     }
     Json record(std::uint64_t room, bool joined = true) {
+        const auto state = social.lobby_snapshot(
+            room, {"osw_room_metadata", "osw_room_owner"}, joined);
         Json members = Json::array();
         if (joined)
-            for (auto peer : social.members(room)) {
+            for (auto peer : state ? state->members.get() : social.members(room)) {
                 if (members.size() >= 16)
                     break;
                 members.push_back(idstr(peer));
             }
-        auto metadata = Json::parse(social.lobby_data(room, "osw_room_metadata"), nullptr, false);
+        auto metadata = Json::parse(state ? state->data.at("osw_room_metadata").get()
+                                          : social.lobby_data(room, "osw_room_metadata"),
+                                    nullptr, false);
         if (!safe_metadata(metadata))
             metadata = Json::object();
         return {{"room_id", idstr(room)},
                 {"owner",
-                 joined ? idstr(social.owner(room)) : social.lobby_data(room, "osw_room_owner")},
+                 joined ? idstr(state ? state->owner.get() : social.owner(room))
+                        : state ? state->data.at("osw_room_owner").get()
+                                : social.lobby_data(room, "osw_room_owner")},
                 {"members", members},
                 {"metadata", metadata}};
     }

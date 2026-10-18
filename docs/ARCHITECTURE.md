@@ -29,6 +29,17 @@ a Lab storage optimization, with no cache, API/wire change or Steam behavior
 change. Read failures still fail closed and ordinary polling retains its
 existing stale-user cleanup.
 
+The internal `Social` interface also permits a copied lobby snapshot for one
+synchronous directory or authorization decision. The Lab backend reads the
+requested metadata and visible owner/member fields together under one current
+hub lock. Copies are not retained between decisions, packets or worker cycles;
+every later authorization reads again. Store failures propagate immediately.
+Field conversion failures remain attached to their copied values and are raised
+only when accessed, preserving namespace-validation short circuits. A snapshot
+does not consume events or write the hub. Other backends decline this optional
+read and retain the existing scalar calls and their order, including Steam's
+failure reporting. This adds no C API, companion message, TTL or host dependency.
+
 Updated: 2026-10-15, revision 3 with PoC implementation notes. The runtime Steam
 loader, C API, initial session/friend core, shadPS4 adapter and publisher helper
 integration are implemented locally. See INTEGRATION_WORKLOG.md for measured

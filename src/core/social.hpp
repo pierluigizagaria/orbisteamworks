@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
+#include <exception>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,6 +40,26 @@ struct Party {
     std::uint64_t lobby = 0, owner = 0;
     std::vector<std::uint64_t> members;
 };
+template <class T> struct LobbyValue {
+    T value{};
+    std::exception_ptr error;
+    template <class Read> void read(Read read_value) {
+        try {
+            value = read_value();
+        } catch (...) {
+            error = std::current_exception();
+        }
+    }
+    const T &get() const {
+        if (error) std::rethrow_exception(error);
+        return value;
+    }
+};
+struct LobbySnapshot {
+    std::map<std::string, LobbyValue<std::string>> data;
+    LobbyValue<std::uint64_t> owner;
+    LobbyValue<std::vector<std::uint64_t>> members;
+};
 struct OverlayState {
     bool supported = false, available = false, active = false;
 };
@@ -58,6 +80,14 @@ class Social {
     virtual bool delete_lobby_data(std::uint64_t lobby, const std::string &key) = 0;
     virtual std::uint64_t owner(std::uint64_t lobby) = 0;
     virtual std::vector<std::uint64_t> members(std::uint64_t lobby) = 0;
+    // Optional copied read for one synchronous decision, never an authorization cache.
+    // Without it, callers retain scalar reads and their short-circuit behavior.
+    // Field errors are raised on access, preserving validation short circuits.
+    virtual std::optional<LobbySnapshot> lobby_snapshot(std::uint64_t,
+                                                       const std::vector<std::string> &,
+                                                       bool) {
+        return std::nullopt;
+    }
     virtual std::string member_data(std::uint64_t lobby, std::uint64_t user,
                                     const std::string &key) = 0;
     virtual void set_member_data(std::uint64_t lobby, const std::string &key,
