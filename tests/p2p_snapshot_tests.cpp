@@ -32,6 +32,8 @@ struct Fixture : Social {
     std::map<std::string, std::string> data;
     std::set<std::string> failed_data;
     std::map<std::string, unsigned> scalar_reads;
+    std::vector<int> search_distances;
+    std::vector<std::map<std::string, std::string>> search_filters;
     std::vector<Id> users{self, peer};
     Id actual_owner = peer, call = 0;
     unsigned owner_reads = 0, member_reads = 0, member_side_effects = 0;
@@ -74,7 +76,11 @@ struct Fixture : Social {
     std::string presence(Id, const std::string &) override { return {}; }
     bool set_presence(const std::string &, const std::string &) override { return true; }
     Id create_lobby(int) override { return ++call; }
-    Id search_rooms(const std::map<std::string, std::string> &, int) override { return ++call; }
+    Id search_rooms(const std::map<std::string, std::string> &filters, int distance) override {
+        search_distances.push_back(distance);
+        search_filters.push_back(filters);
+        return ++call;
+    }
     Id join_lobby(Id) override { ++joins; return ++call; }
     void leave_lobby(Id) override { ++leaves; std::erase(users, self); }
     bool invite(Id, Id) override { return true; }
@@ -174,6 +180,56 @@ void public_discovery(bool snapshots) {
     check(result.status == OSW_OK && Json::parse(result.metadata)["rooms"].empty(),
           "compatible namespace with invalid metadata is excluded");
     check_no_membership_access(social);
+}
+
+void directory_distance_widening(bool snapshots) {
+    // Provider distances are Default=1, Far=2, Worldwide=3. Zero means no match.
+    for (int first_match : {0, 1, 2, 3}) {
+        Fixture social(snapshots);
+        const auto config = configuration();
+        social.data["osw_room_metadata"] = R"({"playlist":"fixture","type":"public"})";
+        const std::map<std::string, std::string> filters{
+            {"osw_room", "osw/1"}, {"osw_title", config.title}, {"osw_build", config.build},
+            {"osw_realm", config.realm}, {"osw_room_protocol", "1"},
+            {"osw_room_playlist", "fixture"}, {"osw_room_type", "public"}};
+        P2P p2p(config, {true, self, "Local"}, social);
+        submit(p2p, 1, {{"op", "directory.search"},
+                       {"metadata", {{"playlist", "fixture"}, {"type", "public"}}}});
+        check(p2p.poll().results.empty(), "directory search waits for its first list callback");
+        std::vector<int> expected;
+        for (int distance = 1; distance <= 3; ++distance) {
+            expected.push_back(distance);
+            check(social.search_distances == expected,
+                  "directory search must request Default then Far then Worldwide exactly");
+            check(social.search_filters.size() == expected.size() &&
+                      social.search_filters.back() == filters,
+                  "distance widening preserves exact namespace and room filters");
+            auto event = listed(social.call);
+            const bool found = distance == first_match;
+            if (!found && distance != 2)
+                event.lobbies.clear();
+            // Far can return a lobby, but an incompatible namespace is not a match.
+            social.data["osw_build"] = found ? config.build : "foreign-build";
+            p2p.process({event});
+            auto update = p2p.poll();
+            if (!found && distance < 3) {
+                check(!update.failed && update.results.empty(),
+                      "empty or incompatible results widen without premature completion");
+                continue;
+            }
+            check(!update.failed && update.results.size() == 1 &&
+                      update.results[0].id == 1 && update.results[0].status == OSW_OK,
+                  "directory search completes once at its first match or Worldwide exhaustion");
+            const auto rooms = Json::parse(update.results[0].metadata).at("rooms");
+            check(found ? rooms.size() == 1 && rooms[0]["room_id"] == std::to_string(room)
+                        : rooms.empty(),
+                  "directory result contains exactly the compatible room or no rooms");
+            p2p.process({});
+            check(p2p.poll().results.empty() && social.search_distances == expected,
+                  "first compatible result stops widening and Worldwide never starts a fourth search");
+            break;
+        }
+    }
 }
 
 void entered_revalidation(bool snapshots) {
@@ -276,6 +332,7 @@ void fresh_authorization(bool snapshots) {
 int main() {
     try {
         for (bool snapshots : {false, true}) {
+            directory_distance_widening(snapshots);
             public_discovery(snapshots);
             entered_revalidation(snapshots);
             required_errors(snapshots);

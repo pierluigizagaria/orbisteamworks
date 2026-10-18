@@ -690,3 +690,21 @@ remains its own evidence, supplemented by this single new regression. Private
 logs: `out/child-lifetime-test-20261018.log` and
 `out/child-lifetime-negative-20261018.log`. The negative variant is confined
 to the ignored build directory and is not a shipped configuration.
+
+## Explicit discovery-distance regression, 2026-10-18
+
+The existing `p2p-snapshot-authorization` fixture now records each requested
+distance and its namespace/playlist/type filters. For both scalar and optional
+snapshot reads, it verifies exact Default (1), Far (2), Worldwide (3) order
+after empty or incompatible results; identical filters at every step; no fourth
+search after exhaustion; and immediate completion at the first compatible room
+at each of the three distances. Eight scenarios exercise returned results and
+asynchronous callback completion, not only a counter in the implementation.
+
+The targeted test passes in 0.05 seconds. An ignored build-local negative
+control that skips Far fails the exact-order assertion. Production `p2p.cpp`
+and the installed DLL remain unchanged. Private logs are
+`out/directory-widening-test-20261018.log` and
+`out/directory-widening-negative-20261018.log`. This closes the specific fixture
+coverage gap; the earlier single-account live check found a room at the first
+distance and still does not establish live geographical expansion or WAN/SDR.
