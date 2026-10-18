@@ -215,6 +215,7 @@ class LabSocial final : public core::Social {
     LabSocial(const core::Config &config)
         : root(std::u8string(config.lab_root.begin(), config.lab_root.end())),
           self(std::to_string(config.lab_account_id)), account(config.lab_account_id) {
+        if (config.app_id != 480) root /= "app-" + std::to_string(config.app_id);
         Store store(root, true);
         if (store.state["users"].contains(self))
             throw FailureError(Failure::identity_active);
@@ -534,7 +535,7 @@ class LabBackend final : public core::Backend {
         social = std::make_unique<LabSocial>(config);
         value = {true, config.lab_account_id,
                  config.online_id.empty() ? "LabPlayer" : config.online_id, "Simulated local lab",
-                 0};
+                 0, config.online_id.empty() ? "LabPlayer" : config.online_id};
         platform = std::make_unique<core::Platform>(config, value, *social);
         if (!platform->start())
             throw FailureError(Failure::platform_start);

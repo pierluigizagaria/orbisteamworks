@@ -31,6 +31,7 @@ class EndpointRoutes {
     std::map<Endpoint, std::uint64_t> outgoing, incoming;
     std::set<std::uint64_t> collisions;
     void erase_locked(std::uint64_t);
+    bool permitted_locked(std::uint64_t, Endpoint canonical);
   public:
     static constexpr std::size_t limit = 1024;
     void enable();
@@ -38,6 +39,7 @@ class EndpointRoutes {
     void set_ready();
     void close();
     bool install(std::uint64_t, Endpoint canonical, Endpoint proxy);
+    bool permits(std::uint64_t, Endpoint canonical);
     void erase(std::uint64_t);
     bool contains(std::uint64_t) const;
     int local_endpoint(Endpoint &) const;

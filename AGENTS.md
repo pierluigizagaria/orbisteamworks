@@ -1,5 +1,20 @@
 # Project instructions
 
+## Superseding bridge task (2026-10-19)
+
+The workspace `docs/drafts/codex-ctrnf-p2p-bridge.md` governs B0–B5. Its bridge
+process consumes this public C API; this supersedes in-process-only integration
+and FEASIBILITY revision 3.1's rejection of a separate local server. Existing
+in-process consumers remain supported. Add opt-in `loopback-v1` endpoints while
+preserving legacy and virtual-v1 behavior, with explicit companion capability
+negotiation. AppID is configurable through an additive API, default 480; this
+supersedes the permanent-480 rule. Namespace checks remain mandatory and never
+include economy mode. Keep platform symbols in `src/steam/`, canonical endpoint
+allocation and peer authorization in the provider, and all CTR semantics outside.
+The bridge supplies an ASCII explicit online ID each launch; no live rename is
+promised for an explicit override. Local commits and parallel agents are authorized;
+no publication or SDK distribution. Existing native source/profiles stay intact.
+
 ## Superseding P2P task (2026-10-16)
 
 `docs/P2P_DESIGN.md` and the workspace `docs/drafts/codex-p2p-native.md` now

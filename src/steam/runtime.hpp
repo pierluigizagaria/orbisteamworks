@@ -37,8 +37,8 @@ struct Ticket {
 // Destruction cancels tickets, ends accepted sessions and shuts down the API.
 class Runtime : public core::Social {
   public:
-    explicit Runtime(const std::filesystem::path &library = {});
-    static std::unique_ptr<Runtime> create(const std::filesystem::path &library = {});
+    explicit Runtime(const std::filesystem::path &library = {}, std::uint32_t app_id = 480);
+    static std::unique_ptr<Runtime> create(const std::filesystem::path &library = {}, std::uint32_t app_id = 480);
     ~Runtime();
     Runtime(const Runtime &) = delete;
     Runtime &operator=(const Runtime &) = delete;
@@ -96,7 +96,7 @@ class Runtime : public core::Social {
 
   private:
     struct Checked {};
-    Runtime(const std::filesystem::path &library, Checked);
+    Runtime(const std::filesystem::path &library, std::uint32_t app_id, Checked);
     struct Impl;
     std::unique_ptr<Impl> p;
 };

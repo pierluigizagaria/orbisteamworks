@@ -31,7 +31,7 @@ struct Client {
         config.base.abi_version = OSW_ABI_VERSION_2;
         copy(config.base.title, "5760");
         copy(config.base.build, "01.21");
-        copy(config.base.realm, "p2ptest");
+        copy(config.base.realm, std::getenv("OSW_LOOPBACK_TEST") ? "p2ploopback13" : "p2ptest");
         copy(config.base.online_id, id == 100001 ? "LabOne" : "LabTwo");
         config.backend = 1;
         config.game_port = 3074;
@@ -41,6 +41,8 @@ struct Client {
         copy(config.companion_path, companion);
         copy(config.companion_environment, environment);
         check(osw_create_v2(&config, &context) == OSW_OK, "v2 create failed");
+        if (std::getenv("OSW_LOOPBACK_TEST"))
+            check(osw_enable_loopback_endpoints(context) == OSW_OK, "loopback enable");
         check(osw_start(context) == OSW_OK, "v2 start failed");
         auto end = Clock::now() + std::chrono::seconds(5);
         for (;;) {
@@ -165,7 +167,7 @@ int companion_role() {
     check(std::to_string(token.user) == owner["steam_id"].get<std::string>() &&
               token.bytes.size() == 32,
           "owner capability");
-    std::cout << "{\"v\":1,\"event\":\"ready\"}" << std::endl;
+    std::cout << Json{{"v",1},{"event","ready"},{"capabilities",Json::array({"loopback.endpoints.v1"})}}.dump() << std::endl;
     while (std::getline(std::cin, line)) {
     }
     std::ofstream(std::getenv("OSW_TEST_DONE")) << "EOF";
@@ -222,8 +224,10 @@ int main(int argc, char **argv) {
                   "cross-process friend list");
             auto lookup = local.call({{"op", "name.lookup"}, {"names", {"LabTwo"}}});
             check(lookup["result"]["players"].size() == 1, "local friend name lookup");
-            auto initial_endpoint = local.call(
-                {{"op", "peer.endpoint"}, {"scope", "friend"}, {"peer", "100002"}})["result"];
+            const auto initial_reply = local.call(
+                {{"op", "peer.endpoint"}, {"scope", "friend"}, {"peer", "100002"}});
+            check(initial_reply["status"] == 0, "initial peer endpoint unavailable");
+            auto initial_endpoint = initial_reply["result"];
             const auto expect_preparty_drop = [&] {
                 auto before = remote(peer, {{"metadata", {{"op", "status"}}}})["result"];
                 check(game.send("ungranted", initial_endpoint["address"], initial_endpoint["port"]),

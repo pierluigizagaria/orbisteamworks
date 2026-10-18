@@ -9,12 +9,21 @@ Endpoint virtual_endpoint(std::uint64_t account, const Config &config) {
     // ID in little-endian order. This labels endpoints; it is not authentication.
     std::uint64_t hash = 14695981039346656037ull;
     const auto byte = [&](std::uint8_t value) { hash ^= value; hash *= 1099511628211ull; };
-    for (const auto &part : {std::string("osw-virtual-endpoint-v1"), config.title,
+    for (const auto &part : {std::string(config.loopback_endpoints ? "osw-loopback-endpoint-v1" : "osw-virtual-endpoint-v1"), config.title,
                              config.build, config.realm}) {
         byte(static_cast<std::uint8_t>(part.size()));
         for (unsigned char value : part) byte(value);
     }
     for (int n = 0; n < 8; ++n) byte(static_cast<std::uint8_t>(account >> (8 * n)));
+    if (config.loopback_endpoints) {
+        for (int n = 0; n < 4; ++n) byte(static_cast<std::uint8_t>(config.app_id >> (8 * n)));
+        constexpr std::uint64_t ports = 65536 - 1024, addresses = 1ull << 22;
+        const auto index = hash % (ports * addresses);
+        const auto address = index / ports;
+        return {{{127, static_cast<std::uint8_t>(64 + (address >> 16)),
+                   static_cast<std::uint8_t>(address >> 8), static_cast<std::uint8_t>(address)}},
+                static_cast<std::uint16_t>(1024 + index % ports)};
+    }
     constexpr std::uint64_t ports = 65536 - 1024, addresses = 131072;
     const auto index = hash % (ports * addresses);
     const auto address = index / ports;
@@ -69,8 +78,7 @@ void EndpointRoutes::erase_locked(std::uint64_t peer) {
         routes.erase(found);
     }
 }
-bool EndpointRoutes::install(std::uint64_t peer, Endpoint canonical, Endpoint proxy) {
-    std::lock_guard lock(mutex);
+bool EndpointRoutes::permitted_locked(std::uint64_t peer, Endpoint canonical) {
     if (!enabled || stopped || !peer || collisions.contains(peer) ||
         (!routes.contains(peer) && routes.size() + collisions.size() >= limit))
         return false;
@@ -85,6 +93,15 @@ bool EndpointRoutes::install(std::uint64_t peer, Endpoint canonical, Endpoint pr
         collisions.insert(peer);
         return false;
     }
+    return true;
+}
+bool EndpointRoutes::permits(std::uint64_t peer, Endpoint canonical) {
+    std::lock_guard lock(mutex);
+    return permitted_locked(peer, canonical);
+}
+bool EndpointRoutes::install(std::uint64_t peer, Endpoint canonical, Endpoint proxy) {
+    std::lock_guard lock(mutex);
+    if (!permitted_locked(peer, canonical)) return false;
     if (const auto existing = incoming.find(proxy);
         existing != incoming.end() && existing->second != peer)
         return false;

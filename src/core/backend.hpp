@@ -16,12 +16,19 @@ struct Config {
     std::string lab_root, companion_path, companion_working_dir, companion_environment, game_bind;
     bool virtual_endpoints = false;
     std::shared_ptr<EndpointRoutes> endpoints;
+    bool loopback_endpoints = false;
+    std::uint32_t app_id = 480;
+    bool canonical_endpoints() const { return virtual_endpoints || loopback_endpoints; }
+    const char *protocol() const { return loopback_endpoints ? "3" : virtual_endpoints ? "2" : "1"; }
+    const char *wire_protocol() const { return loopback_endpoints ? "OSW3" : virtual_endpoints ? "OSW2" : "OSW1"; }
+    const char *ad_protocol() const { return loopback_endpoints ? "osw/3" : virtual_endpoints ? "osw/2" : "osw/1"; }
 };
 struct Identity {
     bool signed_in = false;
     std::uint64_t account_id = 0;
     std::string online_id, reason;
     int reason_code = 0;
+    std::string persona_name;
 };
 struct Request {
     std::uint64_t id = 0;

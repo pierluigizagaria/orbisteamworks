@@ -33,11 +33,11 @@ std::filesystem::path executable_directory(std::error_code &error) {
     return std::filesystem::read_symlink("/proc/self/exe", error).parent_path();
 #endif
 }
-bool set_app_id() {
+bool set_app_id(std::uint32_t value) {
 #ifdef _WIN32
-    return SetEnvironmentVariableW(L"SteamAppId", L"480") != 0;
+    return SetEnvironmentVariableW(L"SteamAppId", std::to_wstring(value).c_str()) != 0;
 #else
-    return setenv("SteamAppId", "480", 1) == 0;
+    return setenv("SteamAppId", std::to_string(value).c_str(), 1) == 0;
 #endif
 }
 template <class T> T payload(const flat::Callback &cb, std::optional<Error> &error) {
@@ -53,6 +53,7 @@ template <class T> T payload(const flat::Callback &cb, std::optional<Error> &err
 } // namespace
 
 struct Runtime::Impl {
+    std::uint32_t app_id = 480;
     std::optional<Error> error;
     std::filesystem::path path;
 #ifdef _WIN32
@@ -177,7 +178,8 @@ struct Runtime::Impl {
     }
 };
 
-Runtime::Runtime(const std::filesystem::path &library, Checked) : p(std::make_unique<Impl>()) {
+Runtime::Runtime(const std::filesystem::path &library, std::uint32_t app_id, Checked) : p(std::make_unique<Impl>()) {
+    p->app_id = app_id;
 #ifdef _WIN32
     constexpr auto filename = "steam_api64.dll";
 #else
@@ -212,12 +214,12 @@ Runtime::Runtime(const std::filesystem::path &library, Checked) : p(std::make_un
     p->free_callback =
         p->find_symbol<flat::FreeCallback>("SteamAPI_ManualDispatch_FreeLastCallback");
 }
-Runtime::Runtime(const std::filesystem::path &library) : Runtime(library, Checked{}) {
+Runtime::Runtime(const std::filesystem::path &library, std::uint32_t app_id) : Runtime(library, app_id, Checked{}) {
     if (p->error)
         throw *p->error;
 }
-std::unique_ptr<Runtime> Runtime::create(const std::filesystem::path &library) {
-    return std::unique_ptr<Runtime>(new Runtime(library, Checked{}));
+std::unique_ptr<Runtime> Runtime::create(const std::filesystem::path &library, std::uint32_t app_id) {
+    return std::unique_ptr<Runtime>(new Runtime(library, app_id, Checked{}));
 }
 Runtime::~Runtime() = default;
 const Error *Runtime::error() const noexcept { return p->error ? &*p->error : nullptr; }
@@ -244,8 +246,8 @@ bool Runtime::try_start_client() {
     p->cancel = p->find_symbol<flat::CancelTicket>("SteamAPI_ISteamUser_CancelAuthTicket");
     if (p->error)
         return false;
-    if (!set_app_id()) {
-        p->error.emplace(ErrorCode::io, "Cannot set process SteamAppId=480");
+    if (!set_app_id(p->app_id)) {
+        p->error.emplace(ErrorCode::io, "Cannot set process SteamAppId");
         return false;
     }
     flat::ErrorMessage detail{};
@@ -291,8 +293,8 @@ void Runtime::start_server() {
     auto dedicated = p->symbol<flat::SetBool>("SteamAPI_ISteamGameServer_SetDedicatedServer");
     auto advertise = p->symbol<flat::SetBool>("SteamAPI_ISteamGameServer_SetAdvertiseServerActive");
     auto logon = p->symbol<flat::InterfaceVoid>("SteamAPI_ISteamGameServer_LogOnAnonymous");
-    if (!set_app_id())
-        throw Error(ErrorCode::io, "Cannot set process SteamAppId=480");
+    if (!set_app_id(p->app_id))
+        throw Error(ErrorCode::io, "Cannot set process SteamAppId");
     flat::ErrorMessage detail{};
     // Query-port shared mode opens no query socket. We own no game socket and
     // never forward discovery packets. Advertising defaults false in SDK 1.65.
@@ -309,7 +311,7 @@ void Runtime::start_server() {
         throw Error(ErrorCode::symbol_missing, "SteamGameServer015 interface unavailable");
     advertise(p->api, false);
     dedicated(p->api, true);
-    product(p->api, "480");
+    product(p->api, std::to_string(p->app_id).c_str());
     description(p->api, "orbiSteamworks private auth spike");
     p->dispatch_init();
     logon(p->api);
@@ -720,7 +722,7 @@ std::vector<Event> Runtime::try_poll() {
                 p->error.emplace(ErrorCode::callback_abi, "Invalid overlay callback state");
                 return {};
             }
-            if (value.app != 480) break;
+            if (value.app != p->app_id) break;
             p->overlay_active = value.active != 0;
             p->social_events.push_back({core::SocialEvent::overlay_changed, 0, 0, 0, true,
                                        static_cast<int>(value.active)});
@@ -835,7 +837,7 @@ std::vector<Event> Runtime::try_poll() {
             auto value = payload<flat::LobbyInvite>(cb, p->error);
             if (p->error)
                 return {};
-            if (value.game == 480)
+            if (value.game == p->app_id)
                 p->social_events.push_back(
                     {core::SocialEvent::invitation, 0, value.lobby, value.user, true});
             break;
@@ -860,7 +862,7 @@ std::vector<Event> Runtime::try_poll() {
             auto value = payload<flat::RichPresenceChanged>(cb, p->error);
             if (p->error)
                 return {};
-            if (value.app == 480)
+            if (value.app == p->app_id)
                 p->social_events.push_back({core::SocialEvent::friends_changed});
             break;
         }

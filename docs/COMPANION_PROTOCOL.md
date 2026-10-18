@@ -21,7 +21,10 @@ include `CTR_COMPANION=stdio`, `CTR_ADMISSION=local` and
 `CTR_MATCHMAKING=steam`. The library does not interpret these settings.
 
 Parent first sends `{v:1,event:"owner",steam_id,online_id,token,title,build,realm,
-backend:"steam"|"lab"}`. The child must receive this within ten seconds.
+backend:"steam"|"lab",app_id:480}`. The child must receive this within ten seconds.
+The optional positive uint32 `app_id` defaults to 480 when absent; current
+providers emit it explicitly. It belongs to platform identity/namespace, never
+economy. Older consumers may ignore this additive field.
 `token` is an `osw1` envelope with a random 32-byte per-process capability in
 the ticket field. This is local admission only: exact token plus parsed owner
 ID must match. It is never a Steam ticket and never goes to an auth helper or
@@ -48,6 +51,16 @@ allocation still happen inside the library. The host's synchronous C route API
 translates the physical socket addresses. The child owns its title-specific
 address validation/serialization; the library never interprets that document.
 The child must preserve embedded peer identity data when using this mode.
+
+For `loopback-v1` the five transport fields have the same shape, with
+`mode:"loopback-v1"` and canonical addresses in `127.64.0.0/10`, ports
+1024..65535. The ready acknowledgement must include `loopback.endpoints.v1`;
+`virtual.endpoints.v1` alone does not suffice. The exact physical game source
+must be loopback outside that reserved range. Proxy sockets bind to the remote
+canonical endpoint itself, so hosts use no translation calls. The publisher
+still owns all title-specific document validation and preserves peer identity.
+Bind/collision errors never allocate fallback endpoints. See [C_API.md](C_API.md)
+for derivation, revocation, AppID isolation and Windows source evidence.
 
 A child supporting live owner-name changes advertises
 `{v:1,event:"ready",capabilities:["owner.name.v1"]}`. Capabilities contain at

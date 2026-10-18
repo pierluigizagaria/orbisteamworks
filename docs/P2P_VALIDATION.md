@@ -800,3 +800,64 @@ The frozen timing helper hash is
 `a54a6079f703ec86fe4194e7459d3af47e04c076813bdc7337309ce05e8cac40`.
 This records component tests and measurements only; installation, optional
 integration checks and a human retest of the new candidate remain separate.
+
+## Bridge B0/B1, 2026-10-19
+
+Base source was `95f8c29` on `feat/native-p2p`; work is on
+`feat/loopback-endpoints`. B0 rebuilt the existing static/shared configuration.
+Its 45 tests passed across the initial run (43) and the outside-sandbox rerun
+of the two loopback UDP tests (2); the restricted runner silently dropped UDP.
+Retained local logs: `out/bridge-b0-baseline.log` and
+`out/bridge-b0-network-baseline.log`. No source or native profile was changed for
+that baseline.
+
+B1's final Windows MSVC Release static/shared build passes **48/48 tests** in
+48.15 seconds (`out/bridge-b1-tests-final.log`). The build log is
+`out/bridge-b1-build-final.log`. Shared-load resolves exactly 17 public C names;
+all ABI 1/2 structure layouts remain unchanged. New coverage includes:
+
+- Loopback canonical range, full-account and AppID derivation; registry collision
+  tombstones; no published route before a successful physical bind.
+- Exact canonical socket binding, occupied-endpoint failure without fallback,
+  wrong game-source rejection, byte-preserving bidirectional UDP, first-packet
+  reverse authorization, withdrawal and fresh reauthorization.
+- Legacy and virtual-v1 isolation; AppID-isolated Lab hubs; explicit companion
+  capability acknowledgement; original virtual and legacy regressions.
+- A two-process loopback Lab carrier with friend discovery, unilateral
+  advertisement bootstrap, party invitations/commit, room flow and departure.
+- Configured AppID environment and matching/foreign invitation, rich-presence
+  and overlay callback filters; copied raw persona before UTF-8 cleanup and
+  online-ID truncation, including short-buffer/explicit-name contracts.
+
+These are synthetic contracts (S), not live Steam, original game or WAN tests.
+The endpoint mapping, capability names and AppID extension are implementation
+choices (I). No title packets or host socket behavior were added to this library.
+
+Windows source selection was separately measured with ordinary UDP sockets:
+a wildcard-bound game sends to a 127.64/10 proxy from `127.0.0.1` and its bound
+port, and receives replies whose source is the canonical proxy endpoint.
+`out/bridge-b1-source-probe.log` retains the observation. The API therefore keeps
+exact game-source validation; no wildcard relaxation was needed. Linux and macOS
+remain unqualified. The current POSIX runtime also has Linux-specific executable
+and loaded-library discovery; CMake-only macOS enablement would be misleading.
+
+One initial synthetic namespace selected UDP port 54410, and AppID 481 in the
+optional publisher integration selected port 62201. Windows rejected those
+binds with `WSAEACCES` (10013). The provider correctly refused the route.
+`out/bridge-b1-endpoint-bind-probe.py` and
+`out/bridge-b1-integration-bind-probe.py` reproduce that isolated bind evidence.
+The cross-process fixture now names a separate fixed namespace whose canonical
+ports are usable on this machine; the alternate-AppID integration uses explicit
+synthetic AppID 482. Production never changes AppID, namespace or endpoint to
+work around a reservation. OS-reserved ports are a documented fail-closed limit.
+
+Final locally built artifacts (SHA-256):
+
+| Artifact | Hash |
+| --- | --- |
+| `build/loopback-candidate/orbisteamworks.dll` | `c0025482bac7ffc98a45139b826761f0df182535234e3436555021c1cbd8119f` |
+| `build/loopback-candidate/orbisteamworks.lib` | `2d59e592181c69dc073442b3bd463391f299a9e2b4c8c53f0fe61ddd59248301` |
+
+Optional actual-DLL/two-publisher and owned-game identity-gate records belong to
+the publisher integration report and workspace bridge work log. Those remain
+separate from this component's independently buildable ordinary test suite.

@@ -149,7 +149,7 @@ struct UdpSocket::Impl {
 #endif
     }
 };
-UdpSocket::UdpSocket(const std::string &address, std::uint16_t port) : p(std::make_unique<Impl>()) {
+UdpSocket::UdpSocket(const std::string &address, std::uint16_t port, bool exclusive) : p(std::make_unique<Impl>()) {
     if (!loopback_address(address))
         throw std::runtime_error("nonlocal proxy address");
 #ifdef _WIN32
@@ -161,6 +161,16 @@ UdpSocket::UdpSocket(const std::string &address, std::uint16_t port) : p(std::ma
     p->socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (p->socket == invalid_socket)
         throw std::runtime_error("socket allocation");
+#ifdef _WIN32
+    if (exclusive) {
+        const BOOL enabled = TRUE;
+        if (setsockopt(p->socket, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                       reinterpret_cast<const char *>(&enabled), sizeof(enabled)))
+            throw std::runtime_error("exclusive proxy socket");
+    }
+#else
+    (void)exclusive; // No SO_REUSEADDR/PORT is enabled on POSIX.
+#endif
     auto e = endpoint(address, port);
     if (bind(p->socket, (sockaddr *)&e, sizeof(e)))
         throw std::runtime_error("proxy bind");

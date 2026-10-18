@@ -1,5 +1,13 @@
 # Runtime-loadable library (plugin) design
 
+Current addendum (2026-10-19): the standalone bridge is now an authorized
+consumer of this same library API. AppID is configurable (default 480), and
+loopback-v1 needs no native socket adapter. Historical in-process-only and
+permanent-480 restrictions below are superseded by [P2P_DESIGN.md](P2P_DESIGN.md).
+The DLL now exports 17 C functions, adding optional endpoint selection, AppID
+configuration and a copied raw-persona getter without changing ABI 1/2 layouts.
+Consumers resolve every function they use and fail clearly if one is absent.
+
 Date: 2026-10-15. Status: design note and local prototype (I). This is not a
 release, a distribution decision or a host change. Distribution decisions stay
 deferred by the user.

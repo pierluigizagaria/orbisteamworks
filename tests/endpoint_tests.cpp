@@ -43,6 +43,16 @@ void labels_and_inputs() {
     check(!read_endpoint(input, parsed), "oversize port rejected");
     input.port = 0;
     check(!read_endpoint(input, parsed), "zero port rejected");
+    config.loopback_endpoints = true;
+    const auto loop = virtual_endpoint(42, config);
+    check(loop == virtual_endpoint(42, config), "loopback canonical identity is stable");
+    config.app_id = 481;
+    check(loop != virtual_endpoint(42, config), "AppID changes loopback namespace");
+    for (unsigned n = 1; n < 10000; ++n) {
+        const auto value = virtual_endpoint(n, config);
+        check(value.address[0] == 127 && value.address[1] >= 64 && value.address[1] < 128 &&
+              value.port >= 1024, "canonical loopback reserved range and unprivileged port");
+    }
 }
 void lifecycle_collision_and_bound() {
     EndpointRoutes routes;
@@ -53,6 +63,9 @@ void lifecycle_collision_and_bound() {
     routes.initialize(point(0));
     routes.set_ready();
     check(routes.local_endpoint(output) == OSW_OK && output == point(0), "local endpoint copied");
+    check(routes.permits(1, point(1)) &&
+              routes.lookup(OSW_ROUTE_OUTBOUND, point(1), output) == OSW_NOT_FOUND,
+          "pre-bind collision check publishes no route");
     check(routes.install(1, point(1), point(1, 3000)), "first route");
     check(routes.lookup(OSW_ROUTE_OUTBOUND, point(1), output) == OSW_OK && output == point(1, 3000),
           "outbound translation");

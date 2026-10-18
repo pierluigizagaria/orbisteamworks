@@ -144,7 +144,7 @@ struct Platform::Impl {
         const auto data = [&](const char *key) {
             return state ? state->data.at(key).get() : social.lobby_data(lobby, key);
         };
-        return data("osw.protocol") == (config.virtual_endpoints ? "2" : "1") &&
+        return data("osw.protocol") == (config.protocol()) &&
                data("osw.title") == config.title && data("osw.build") == config.build &&
                data("osw.realm") == config.realm;
     }
@@ -153,7 +153,7 @@ struct Platform::Impl {
                                      lobby, {"osw.protocol", "osw.title", "osw.build", "osw.realm"}, false));
     }
     bool compatible_document(const Json &document) {
-        return document.is_object() && text(document, "protocol") == (config.virtual_endpoints ? "2" : "1") &&
+        return document.is_object() && text(document, "protocol") == (config.protocol()) &&
                text(document, "title") == config.title && text(document, "build") == config.build &&
                text(document, "realm") == config.realm && document.contains("description") &&
                valid_description(document["description"]) && document.contains("created") &&
@@ -178,7 +178,7 @@ struct Platform::Impl {
         std::set<Id> remaining;
         for (auto &user : list) {
             remaining.insert(user.id);
-            if (!user.online || social.presence(user.id, "osw.protocol") != (config.virtual_endpoints ? "2" : "1") ||
+            if (!user.online || social.presence(user.id, "osw.protocol") != (config.protocol()) ||
                 social.presence(user.id, "osw.title") != config.title ||
                 social.presence(user.id, "osw.build") != config.build ||
                 social.presence(user.id, "osw.realm") != config.realm) {
@@ -474,7 +474,7 @@ struct Platform::Impl {
             error(request.id, 400);
             return;
         }
-        Json document{{"protocol", config.virtual_endpoints ? "2" : "1"},
+        Json document{{"protocol", config.protocol()},
                       {"title", config.title},
                       {"build", config.build},
                       {"realm", config.realm},
@@ -927,7 +927,7 @@ Platform::Platform(Config config, Identity identity, Social &social)
 Platform::~Platform() = default;
 bool Platform::start() {
     const std::vector<std::string> values{
-        p->config.virtual_endpoints ? "2" : "1", p->config.title, p->config.build, p->config.realm, p->identity.online_id, ""};
+        p->config.protocol(), p->config.title, p->config.build, p->config.realm, p->identity.online_id, ""};
     for (size_t i = 0; i < presence_keys.size(); ++i)
         if (!p->social.set_presence(presence_keys[i], values[i])) {
             stop();
@@ -1069,7 +1069,7 @@ void Platform::process(const std::vector<SocialEvent> &events) {
                 p->publication_stage = "namespace";
                 p->publication_detail = 0;
                 bool ok =
-                    p->social.set_lobby_data(event.lobby, "osw.protocol", p->config.virtual_endpoints ? "2" : "1") &&
+                    p->social.set_lobby_data(event.lobby, "osw.protocol", p->config.protocol()) &&
                     p->social.set_lobby_data(event.lobby, "osw.title", p->config.title) &&
                     p->social.set_lobby_data(event.lobby, "osw.build", p->config.build) &&
                     p->social.set_lobby_data(event.lobby, "osw.realm", p->config.realm) &&

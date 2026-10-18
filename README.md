@@ -4,7 +4,7 @@ orbiSteamworks implements PS4 platform services on top of Steamworks, so a PS4
 game running in an emulator or a native port can use Steam for its online
 identity, friends, sessions and invitations.
 
-The host links the library in-process and forwards the game's NP calls to it:
+A host or independent bridge loads or links the library and forwards NP calls to it:
 NpManager identity, NpAuth ID tokens and NpWebApi requests. The library answers
 them using the Steam client already running on the player's PC. A private game
 server can then admit players by verified SteamID.
@@ -42,6 +42,12 @@ Scores, TUS, trophies, Matching2 and signaling are not implemented. Game traffic
 uses the host's sockets; ABI 2 can supply per-peer loopback UDP proxies backed
 by Steam transport.
 
+The independent bridge can opt into `loopback-v1`: canonical per-peer sockets
+inside `127.64.0.0/10` carry opaque race traffic without native socket patches.
+Failed or reserved binds fail closed. Windows same-PC Lab supports at most two
+players; Steam multiplayer still requires independent accounts/PCs. See the
+[additive C API](docs/C_API.md#bridge-endpoint-mode-and-appid-additive-exports-2026-10-19).
+
 Any host can opt into the copied canonical endpoint/UDP route API without
 changing ABI 1/2 structures. Identity, routing authorization and opaque transport
 stay in this library; guest socket translation stays in the host, and title
@@ -58,11 +64,10 @@ are optional consumers of the documented interfaces.
   user downloads the Steamworks SDK from Valve and places `steam_api64.dll`
   (or `libsteam_api.so`) next to the host. Without it the provider stays
   signed out and says why.
-- **AppID 480 (Spacewar), permanently.** Friends see "Playing Spacewar".
-  Invitations work only while the game is running: accepting one with the game
-  closed launches Spacewar. Lobbies share the 480 namespace; the library ignores
-  any lobby that does not carry its own protocol, title, build and realm.
-  Valve tolerates this use but does not support it.
+- **Configurable AppID, default 480 (Spacewar).** All players select the same
+  value and must have access to that app through Steam. Friends see that app's
+  name. Cold-launch invitations are unsupported. The library validates protocol,
+  title, build and realm on every lobby; economy mode never changes that namespace.
 
 orbiSteamworks therefore suits private groups and small communities, not a
 public release.
@@ -74,9 +79,10 @@ callbacks into the [C API](docs/C_API.md). The game logic stays in the library.
 
 - **shadPS4:** a fork adds a Steam provider behind `NpHandler`, the WebAPI
   transport and NpAuth. It is not published yet.
-- **GetLostIn native port of CTR Nitro-Fueled:** the first native P2P host, through
-  the shared ABI 2 from its `runtime_net.c`; its game acceptance is tracked
-  separately from the library's fixture tests.
+- **GetLostIn native port of CTR Nitro-Fueled:** the current target is the
+  unmodified pinned online host, supervised by the independent `ctrnf-p2p`
+  bridge through this public C API. Existing in-process integrations remain
+  supported. Game acceptance is tracked separately from fixture tests.
 - **Game servers:** a server verifies `osw1` tokens by running the
   `osw-auth-helper` included here, which logs on to Steam as an anonymous game
   server. The token format and the helper's protocol are specified in
@@ -97,8 +103,9 @@ a shared party and a race between two Steam accounts are not verified yet,
 nor is Linux. The [feasibility document](docs/FEASIBILITY.md#acceptance-gates)
 lists the acceptance gates.
 
-The native P2P candidate additionally passes 32 Windows static/shared contract
-tests, including a two-process simulated backend and hidden-child ownership.
+The bridge candidate additionally passes 48 Windows static/shared contract
+tests, including loopback/virtual isolation, configured AppID, a two-process
+simulated backend and hidden-child ownership.
 These results do not establish a Steam peer race or WAN/SDR acceptance.
 
 ## Building

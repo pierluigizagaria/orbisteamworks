@@ -1,5 +1,24 @@
 # Native P2P design
 
+## Bridge addendum, 2026-10-19 (I)
+
+The authorized workspace `docs/drafts/codex-ctrnf-p2p-bridge.md` supersedes the
+in-process-only target and permanent AppID 480 restriction in this document and
+FEASIBILITY revision 3.1. A separate MIT `ctrnf-p2p` process consumes this C API
+and serves an unchanged native host. Existing in-process, legacy and virtual-v1
+paths remain available. New opt-in `loopback-v1` binds each remote canonical
+endpoint directly within a documented reserved 127/8 range, with fail-closed
+collision/bind handling and a new companion capability acknowledgement.
+AppID becomes configurable through an additive API, default 480. Every peer uses
+the same AppID/title/build/realm; economy is local and excluded from the namespace.
+Weak local admission belongs to the publisher, is off by default and restricted
+to the loopback pipe owner's account. The bridge owns launch/configuration/HTTP,
+the library owns platform and opaque transport, and the publisher owns CTR rules.
+Native source is unchanged; new Lab profiles preserve existing state. The bridge
+passes an ASCII explicit persona each launch. Steamworks stays user supplied.
+Overlay injection, native invitation delivery, host PRs and publication are outside
+this task. Fixture, game and two-PC gates remain separate.
+
 Decision date: 2026-10-16. Status: authorized implementation, acceptance pending.
 This is an explicit replacement design (I), not a recovered Sony contract.
 

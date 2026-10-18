@@ -122,6 +122,15 @@ int32_t osw_create(const osw_config *config, osw_context **output);
  * revoked routes return NOT_FOUND. Errors leave output unchanged. Input/output
  * may alias. No API call may race destroy. See docs/C_API.md for lifecycle. */
 int32_t osw_enable_virtual_endpoints(osw_context *context);
+/* Mutually exclusive with virtual mode; fixed canonical loopback sockets need
+ * no host translation. Both mode selections are immutable before/after start. */
+int32_t osw_enable_loopback_endpoints(osw_context *context);
+/* Pre-start only, nonzero AppID. Default 480; central auth helper stays 480. */
+int32_t osw_set_app_id(osw_context *context, uint32_t app_id);
+/* Raw provider persona, copied from the worker snapshot. required includes NUL.
+ * NULL/zero buffer queries required and returns LIMIT; short buffers unchanged.
+ * No provider/network call. Explicit online_id never changes the raw persona. */
+int32_t osw_get_persona_name(osw_context *context, char *buffer, size_t capacity, size_t *required);
 int32_t osw_get_local_endpoint(osw_context *context, osw_endpoint *output);
 int32_t osw_route_endpoint(osw_context *context, uint32_t direction,
                          const osw_endpoint *input, osw_endpoint *output);

@@ -28,7 +28,7 @@ class SteamBackend final : public core::Backend {
         }
 #endif
         auto utf8 = std::u8string(config.library_path.begin(), config.library_path.end());
-        runtime = Runtime::create(std::filesystem::path(utf8));
+        runtime = Runtime::create(std::filesystem::path(utf8), config.app_id);
         if (!runtime->try_start_client() || !runtime->start_social()) {
             fail_runtime();
             return;
@@ -41,6 +41,7 @@ class SteamBackend final : public core::Backend {
                               : config.online_id,
                           {},
                           0};
+        identity_value.persona_name = runtime->persona();
         platform = std::make_unique<core::Platform>(config, identity_value, *runtime);
         if (!platform->start()) {
             stop();

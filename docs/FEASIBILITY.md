@@ -1,5 +1,11 @@
 # Feasibility: Steam as the PS4 platform provider, in-process
 
+Superseding decision (2026-10-19): the independent bridge is now the target
+consumer, using this public C API and an unmodified host. The separate-bridge
+rejection and permanent-480 constraint below are historical: configurable AppID
+(default 480), loopback-v1 and mandatory title/build/realm replace those limits.
+Central helper behavior remains unchanged. See [P2P_DESIGN.md](P2P_DESIGN.md).
+
 Date: 2026-10-15, revision 3.1. Revision 3 replaced two earlier same-day
 designs: the shadNet-issuer binding and the separate local shadNet-compatible
 server. Revision 3.1 replaces Web API ticket validation with an anonymous

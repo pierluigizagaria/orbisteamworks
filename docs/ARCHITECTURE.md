@@ -1,5 +1,11 @@
 # Architecture
 
+Bridge addendum, 2026-10-19: a separate MIT bridge may load the same public C
+API. Optional loopback-v1 binds canonical peer endpoints without host socket
+translation; AppID is configurable before start (default 480). These supersede
+the historical in-process-only and permanent-480 statements below. Title data
+and protocol parsing stay outside this provider. See [C_API.md](C_API.md).
+
 Native P2P addendum, 2026-10-16: [P2P_DESIGN.md](P2P_DESIGN.md) supersedes the
 native deferral and unchanged-matchmaking statements in the historical revision
 below. ABI 2 keeps the ABI 1 layout and exports, adding explicit Steam/lab backend

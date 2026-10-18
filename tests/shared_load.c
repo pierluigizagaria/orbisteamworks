@@ -46,7 +46,8 @@ static const char *const names[] = {"osw_create",  "osw_start",      "osw_get_id
                                     "osw_submit",  "osw_get_result", "osw_cancel",
                                     "osw_release", "osw_poll_event", "osw_stop",
                                     "osw_destroy", "osw_create_v2", "osw_enable_virtual_endpoints",
-                                    "osw_get_local_endpoint", "osw_route_endpoint"};
+                                    "osw_get_local_endpoint", "osw_route_endpoint", "osw_enable_loopback_endpoints",
+                                    "osw_set_app_id", "osw_get_persona_name"};
 #define NAME_COUNT (sizeof(names) / sizeof(names[0]))
 
 static int fail(const char *message) {

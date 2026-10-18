@@ -42,6 +42,9 @@ int overlay_reply_size = 0, overlay_opens = 0;
 bool overlay_reply_pending = false, overlay_callback = false;
 std::mutex persona_mutex;
 std::string persona_value = " Fixture\x01 Persona \xf0\x9f\x8f\x8e";
+int app_callback_kind = 0;
+LobbyInvite app_invite{};
+RichPresenceChanged app_presence{};
 } // namespace
 EXPORT InitResult SteamAPI_InitFlat(ErrorMessage *) { return scenario() == "no-client" ? 2 : 0; }
 EXPORT InitResult SteamInternal_GameServer_Init_V2(std::uint32_t ip, std::uint16_t game,
@@ -63,6 +66,15 @@ EXPORT void SteamAPI_ManualDispatch_RunFrame(Pipe) { ++frame_count; }
 EXPORT bool SteamAPI_ManualDispatch_GetNextCallback(Pipe, Callback *cb) {
     if (callback_pending)
         std::abort();
+    if (app_callback_kind) {
+        const auto kind = app_callback_kind;
+        app_callback_kind = 0;
+        *cb = kind == lobby_invite
+                  ? Callback{1, kind, reinterpret_cast<std::uint8_t *>(&app_invite), sizeof(app_invite)}
+                  : Callback{1, kind, reinterpret_cast<std::uint8_t *>(&app_presence), sizeof(app_presence)};
+        callback_pending = true;
+        return true;
+    }
     if (overlay_reply_pending) {
         *cb = {1, overlay_activated, reinterpret_cast<std::uint8_t *>(&overlay_reply), overlay_reply_size};
         overlay_reply_pending = false;
@@ -129,6 +141,11 @@ EXPORT void SteamAPI_ManualDispatch_FreeLastCallback(Pipe) {
         completed.pop_front();
 }
 EXPORT Pipe SteamAPI_GetHSteamPipe() { return 1; }
+EXPORT void OSWFixtureAppCallback(unsigned app, bool invite) {
+    app_invite = {2, 9001, app};
+    app_presence = {2, app};
+    app_callback_kind = invite ? lobby_invite : rich_presence_changed;
+}
 EXPORT Pipe SteamGameServer_GetHSteamPipe() { return 2; }
 EXPORT void *SteamAPI_SteamUser_v023() { return &marker; }
 EXPORT void *SteamAPI_SteamGameServer_v015() { return &marker; }

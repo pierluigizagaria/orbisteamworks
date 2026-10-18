@@ -12,7 +12,7 @@ std::string base64(const std::string &bytes);
 bool unbase64(const std::string &text, std::string &bytes, std::size_t limit);
 class UdpSocket {
   public:
-    UdpSocket(const std::string &address, std::uint16_t port = 0);
+    UdpSocket(const std::string &address, std::uint16_t port = 0, bool exclusive = false);
     ~UdpSocket();
     UdpSocket(const UdpSocket &) = delete;
     UdpSocket &operator=(const UdpSocket &) = delete;

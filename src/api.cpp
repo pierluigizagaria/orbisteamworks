@@ -214,8 +214,51 @@ int32_t osw_enable_virtual_endpoints(osw_context *context) {
         std::lock_guard lock(context->mutex);
         if (context->started || context->stopping) return OSW_INVALID_ARGUMENT;
         if (!context->config.p2p) return OSW_NOT_SUPPORTED;
+        if (context->config.loopback_endpoints) return OSW_INVALID_ARGUMENT;
         context->config.virtual_endpoints = true;
         context->config.endpoints->enable();
+        return OSW_OK;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_enable_loopback_endpoints(osw_context *context) {
+    if (!context) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lifecycle(context->lifecycle);
+        std::lock_guard lock(context->mutex);
+        if (context->started || context->stopping || context->config.virtual_endpoints)
+            return OSW_INVALID_ARGUMENT;
+        if (!context->config.p2p) return OSW_NOT_SUPPORTED;
+        osw_endpoint source{sizeof(source)};
+        copy_string(source.address, context->config.game_bind);
+        source.port = context->config.game_port;
+        osw::core::Endpoint parsed;
+        if (!osw::core::read_endpoint(source, parsed) ||
+            (parsed.address[1] >= 64 && parsed.address[1] < 128))
+            return OSW_INVALID_ARGUMENT; // Keep the canonical allocation range reserved.
+        context->config.loopback_endpoints = true;
+        context->config.endpoints->enable();
+        return OSW_OK;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_set_app_id(osw_context *context, uint32_t app_id) {
+    if (!context || !app_id) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lifecycle(context->lifecycle);
+        std::lock_guard lock(context->mutex);
+        if (context->started || context->stopping) return OSW_INVALID_ARGUMENT;
+        context->config.app_id = app_id;
+        return OSW_OK;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_get_persona_name(osw_context *context, char *buffer, size_t capacity, size_t *required) {
+    if (!context || !required || (!buffer && capacity)) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lock(context->mutex);
+        if (!context->identity.signed_in) return OSW_SIGNED_OUT;
+        const auto &name = context->identity.persona_name;
+        *required = name.size() + 1;
+        if (capacity < *required) return OSW_LIMIT;
+        std::memcpy(buffer, name.c_str(), *required);
         return OSW_OK;
     } catch (...) { return OSW_UNAVAILABLE; }
 }

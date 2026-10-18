@@ -85,7 +85,7 @@ struct P2P::Impl {
     Update update;
     Impl(const Config &c, const Identity &i, Social &s) : config(c), identity(i), social(s) {
         token = encode_token({identity.account_id, random_secret(), identity.online_id});
-        if (config.virtual_endpoints) {
+        if (config.canonical_endpoints()) {
             if (!config.endpoints) config.endpoints = std::make_shared<EndpointRoutes>();
             config.endpoints->enable();
             config.endpoints->initialize(virtual_endpoint(identity.account_id, config));
@@ -101,9 +101,10 @@ struct P2P::Impl {
                                  {"build", c.build},
                                  {"realm", c.realm},
                                  {"backend", c.backend ? "lab" : "steam"}};
-            if (config.virtual_endpoints) {
+            owner["app_id"] = c.app_id;
+            if (config.canonical_endpoints()) {
                 const auto endpoint = virtual_endpoint(identity.account_id, config);
-                owner["transport"] = {{"mode", "virtual-v1"},
+                owner["transport"] = {{"mode", config.loopback_endpoints ? "loopback-v1" : "virtual-v1"},
                     {"address", endpoint_address(endpoint)}, {"port", endpoint.port},
                     {"game_address", config.game_bind}, {"game_port", config.game_port}};
             }
@@ -111,11 +112,11 @@ struct P2P::Impl {
                 throw std::runtime_error("companion handshake");
         } else {
             ready = true;
-            if (config.virtual_endpoints) config.endpoints->set_ready();
+            if (config.canonical_endpoints()) config.endpoints->set_ready();
         }
     }
     ~Impl() {
-        if (config.virtual_endpoints) config.endpoints->close();
+        if (config.canonical_endpoints()) config.endpoints->close();
         try {
             for (auto room : rooms)
                 social.leave_lobby(room);
@@ -129,7 +130,7 @@ struct P2P::Impl {
                                                {"osw_title", config.title},
                                                {"osw_build", config.build},
                                                {"osw_realm", config.realm},
-                                               {"osw_room_protocol", config.virtual_endpoints ? "2" : "1"}};
+                                               {"osw_room_protocol", config.protocol()}};
         for (auto &[key, value] : metadata.items())
             if (key != "free_slots")
                 out["osw_room_" + key] = scalar(value);
@@ -174,13 +175,33 @@ struct P2P::Impl {
         return proxy.friend_scope || !proxy.advertisement_grants.empty();
     }
     bool prepare_proxy(std::uint64_t peer, Proxy &proxy) {
+        if (config.loopback_endpoints) {
+            const auto canonical = virtual_endpoint(peer, config);
+            // Check collisions before binding, but publish no route until the
+            // exact physical socket exists. Host readers never see a failed bind.
+            if (!config.endpoints->permits(peer, canonical)) return false;
+            if (!proxy.socket) {
+                if (allocated_sockets >= EndpointRoutes::limit) {
+                    config.endpoints->erase(peer);
+                    return false;
+                }
+                try {
+                    proxy.socket = std::make_unique<UdpSocket>(endpoint_address(canonical), canonical.port, true);
+                    ++allocated_sockets;
+                } catch (...) {
+                    config.endpoints->erase(peer);
+                    return false; // Never substitute another address or ephemeral port.
+                }
+            }
+            return config.endpoints->install(peer, canonical, canonical);
+        }
         if (!proxy.socket) {
-            if (config.virtual_endpoints && allocated_sockets >= EndpointRoutes::limit)
+            if (config.canonical_endpoints() && allocated_sockets >= EndpointRoutes::limit)
                 return false;
             proxy.socket = std::make_unique<UdpSocket>(config.game_bind);
             ++allocated_sockets;
         }
-        if (!config.virtual_endpoints) return true;
+        if (!config.canonical_endpoints()) return true;
         osw_endpoint raw{sizeof(raw)};
         std::copy(config.game_bind.begin(), config.game_bind.end(), raw.address);
         raw.port = proxy.socket->port();
@@ -189,16 +210,21 @@ struct P2P::Impl {
             peer, virtual_endpoint(peer, config), physical);
     }
     Json proxy_endpoint(std::uint64_t peer, const Proxy &proxy) const {
-        if (config.virtual_endpoints) {
+        if (config.canonical_endpoints()) {
             const auto value = virtual_endpoint(peer, config);
             return {{"address", endpoint_address(value)}, {"port", value.port}};
         }
         return {{"address", config.game_bind}, {"port", proxy.socket->port()}};
     }
     auto erase_proxy(std::map<std::uint64_t, Proxy>::iterator it) {
-        if (config.virtual_endpoints) {
+        if (config.canonical_endpoints()) {
             config.endpoints->erase(it->first);
-            if (it->second.socket) retired_sockets.push_back(std::move(it->second.socket));
+            if (it->second.socket) {
+                // Canonical loopback identities are fixed, so a fresh grant
+                // rebinds the same identity. Closing discards queued stale UDP.
+                if (config.loopback_endpoints) { it->second.socket.reset(); --allocated_sockets; }
+                else retired_sockets.push_back(std::move(it->second.socket));
+            }
         }
         return proxies.erase(it);
     }
@@ -207,7 +233,7 @@ struct P2P::Impl {
                 {"op", op},
                 {"id", id},
                 {"context", context},
-                {"protocol", config.virtual_endpoints ? "osw/2" : "osw/1"},
+                {"protocol", config.ad_protocol()},
                 {"title", config.title},
                 {"build", config.build},
                 {"realm", config.realm}};
@@ -612,7 +638,7 @@ struct P2P::Impl {
                     reply(command, request, false, {}, "invalid_payload");
                     return;
                 }
-                std::string packet = config.virtual_endpoints ? "OSW2" : "OSW1";
+                std::string packet = config.wire_protocol();
                 for (int n = 0; n < 8; ++n)
                     packet += (char)(room >> (8 * n));
                 packet += payload;
@@ -630,7 +656,7 @@ struct P2P::Impl {
             friend_refresh = Clock::now();
             friends.clear();
             for (auto &f : social.friends())
-                if (f.online && social.presence(f.id, "osw.protocol") == (config.virtual_endpoints ? "2" : "1") &&
+                if (f.online && social.presence(f.id, "osw.protocol") == (config.protocol()) &&
                     social.presence(f.id, "osw.title") == config.title &&
                     social.presence(f.id, "osw.build") == config.build &&
                     social.presence(f.id, "osw.realm") == config.realm && friends.size() < 500)
@@ -816,14 +842,14 @@ struct P2P::Impl {
                     }
                     owner_name_updates = std::find(capabilities.begin(), capabilities.end(),
                                                    Json("owner.name.v1")) != capabilities.end();
-                    if (config.virtual_endpoints &&
+                    if (config.canonical_endpoints() &&
                         std::find(capabilities.begin(), capabilities.end(),
-                                  Json("virtual.endpoints.v1")) == capabilities.end()) {
+                                  Json(config.loopback_endpoints ? "loopback.endpoints.v1" : "virtual.endpoints.v1")) == capabilities.end()) {
                         broken = true;
                         break;
                     }
                     ready = true;
-                    if (config.virtual_endpoints) config.endpoints->set_ready();
+                    if (config.canonical_endpoints()) config.endpoints->set_ready();
                     continue;
                 }
                 if (!command.contains("id") || !command["id"].is_string() ||
@@ -872,7 +898,7 @@ struct P2P::Impl {
                 std::uint16_t port = 0;
                 if (!proxy.socket->receive(bytes, address, port))
                     break;
-                if (config.virtual_endpoints && !config.endpoints->contains(peer))
+                if (config.canonical_endpoints() && !config.endpoints->contains(peer))
                     continue;
                 ++proxy_received;
                 if (address != config.game_bind || port != config.game_port ||
@@ -880,7 +906,7 @@ struct P2P::Impl {
                     ++proxy_rejected;
                     continue;
                 }
-                std::string packet = config.virtual_endpoints ? "OSW2" : "OSW1";
+                std::string packet = config.wire_protocol();
                 for (int n = 0; n < 8; ++n)
                     packet += (char)(proxy.room >> (8 * n));
                 packet += bytes;
@@ -901,7 +927,7 @@ struct P2P::Impl {
                         continue;
                     auto frame = Json::parse(message.bytes, nullptr, false);
                     if (!frame.is_object() || frame.value("v", 0) != 1 ||
-                        frame.value("protocol", std::string{}) != (config.virtual_endpoints ? "osw/2" : "osw/1") ||
+                        frame.value("protocol", std::string{}) != (config.ad_protocol()) ||
                         frame.value("title", std::string{}) != config.title ||
                         frame.value("build", std::string{}) != config.build ||
                         frame.value("realm", std::string{}) != config.realm)
@@ -938,7 +964,7 @@ struct P2P::Impl {
                 continue;
             }
             if (message.bytes.size() < 12 ||
-                message.bytes.compare(0, 4, config.virtual_endpoints ? "OSW2" : "OSW1") != 0)
+                message.bytes.compare(0, 4, config.wire_protocol()) != 0)
                 continue;
             std::uint64_t room = 0;
             for (int n = 0; n < 8; ++n)
@@ -1043,7 +1069,7 @@ void P2P::cancel(std::uint64_t request) {
 }
 Update P2P::poll() {
     p->poll();
-    if (p->broken && p->config.virtual_endpoints)
+    if (p->broken && p->config.canonical_endpoints())
         p->config.endpoints->close();
     Update out;
     std::swap(out, p->update);

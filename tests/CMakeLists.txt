@@ -138,3 +138,14 @@ if(OSW_BUILD_SHARED)
   add_test(NAME shared-load COMMAND osw-shared-load-test
     $<TARGET_FILE:orbisteamworks_shared> "${CMAKE_CURRENT_BINARY_DIR}/absent-library")
 endif()
+
+add_test(NAME loopback-endpoint-lab COMMAND ${CMAKE_COMMAND} -E env OSW_LOOPBACK_TEST=1 $<TARGET_FILE:osw-virtual-tests>)
+set_tests_properties(loopback-endpoint-lab PROPERTIES TIMEOUT 30)
+add_test(NAME loopback-cross-process-lab COMMAND ${CMAKE_COMMAND} -E env OSW_LOOPBACK_TEST=1 $<TARGET_FILE:osw-p2p-tests>)
+set_tests_properties(loopback-cross-process-lab PROPERTIES TIMEOUT 60)
+
+add_executable(osw-steam-appid-tests ../src/steam/testing/appid_tests.cpp)
+target_link_libraries(osw-steam-appid-tests PRIVATE orbisteamworks osw-test-api)
+target_include_directories(osw-steam-appid-tests PRIVATE ../src)
+add_test(NAME steam-appid-persona-contracts COMMAND ${CMAKE_COMMAND} -E env
+  OSW_FIXTURE_SCENARIO=appid $<TARGET_FILE:osw-steam-appid-tests> $<TARGET_FILE:osw-test-api>)

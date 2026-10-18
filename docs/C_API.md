@@ -267,3 +267,72 @@ legacy retains `1`, `osw/1`, and `OSW1`. Title/build/realm equality is still
 mandatory. Mixed-mode friends, invitations, party documents, rooms and peer
 frames are incompatible. A configured companion must explicitly acknowledge
 `virtual.endpoints.v1` before readiness; see [COMPANION_PROTOCOL.md](COMPANION_PROTOCOL.md).
+
+
+## Bridge endpoint mode and AppID (additive exports, 2026-10-19)
+
+`osw_enable_loopback_endpoints(context)` selects `loopback-v1` after
+`osw_create_v2` and before `osw_start`. It is mutually exclusive with
+`osw_enable_virtual_endpoints`; selecting either freezes that choice even before
+start. Repeating the same selection before start is harmless. A non-P2P context
+returns `OSW_NOT_SUPPORTED`; an incompatible selection or post-start call returns
+`OSW_INVALID_ARGUMENT`. The ABI 1/2 structures remain byte-for-byte unchanged.
+
+In this mode the library binds each authorized remote peer's proxy **exactly** at
+that peer's canonical endpoint. `peer.endpoint` and `osw_get_local_endpoint`
+return these same stable endpoints; hosts require no route translation. Existing
+route getters remain available for inspection, mapping a canonical endpoint to
+itself. Unknown/revoked peers have no route. The configured game endpoint must be
+an exact loopback source outside the reserved canonical range. Incoming Steam
+bytes are emitted from the remote peer's canonical socket to that game endpoint;
+only UDP from the configured game source address and port is forwarded.
+
+Canonical derivation is the virtual-v1 FNV-1a64 construction above with these
+changes: first string `osw-loopback-endpoint-v1`; after the account's eight bytes,
+append the configured AppID's four little-endian bytes. Let
+`i=hash mod (4194304*64512)`; ordinal `i/64512` selects `127.64.0.0/10`, and port
+is `1024+i mod 64512`. Hosts/publishers must reserve this subrange and must not
+reimplement allocation. Endpoint labels are not authentication. Registry
+collisions with self/other peers revoke the affected routes and remain
+quarantined for the context lifetime. Windows sockets use `SO_EXCLUSIVEADDRUSE`.
+Bind failure, including an OS-reserved port, returns `endpoint_unavailable` with
+no route and **no fallback** to a different endpoint or transport.
+
+Revocation closes the loopback socket and discards its queued datagrams. A fresh
+peer authorization may rebind the same canonical identity; this differs from
+virtual-v1's retained physical sockets. There are at most 1024 active loopback
+sockets/routes or collision tombstones. Normal leave/rejoin does not consume a
+lifetime socket quota. Two players per PC is the supported Lab maximum: a third
+process needing an endpoint already bound in another bridge cannot bind it.
+
+Windows measurement (S): a UDP game socket bound to `0.0.0.0` sends to a
+`127.64/10` proxy from `127.0.0.1` with its bound port; the reply retains the
+canonical proxy source. Configure `game_bind=127.0.0.1` for that wildcard host.
+This does not permit wildcard source matching or prove Linux/macOS behavior.
+
+Loopback mode uses platform/party/room protocol `3`, advertisement `osw/3`, and
+carrier header `OSW3`. It cannot discover or join legacy/virtual peers, parties,
+or rooms. The companion must acknowledge `loopback.endpoints.v1`. Namespace
+validation remains mandatory, including title/build/realm; economy is never a
+namespace field.
+
+`osw_set_app_id(context, uint32_t app_id)` selects a nonzero AppID before start
+(default 480), for both ABI 1 and ABI 2. Calls after start/stop fail with
+`OSW_INVALID_ARGUMENT`. The configured value reaches Steam initialization,
+product identification and app/game callback filters. Every player must use the
+same AppID; account licensing and initialization errors remain Steam's decision.
+The central standalone authentication helper is unchanged and still uses 480.
+The Lab carrier partitions its synthetic hub by non-default AppID, mirroring
+Steam's application isolation. No runtime API distributes Steamworks files.
+
+`osw_get_persona_name(context, char *buffer, size_t capacity, size_t *required)`
+copies the raw provider persona captured at startup, before online-ID cleaning,
+trimming or truncation. `required` includes the terminating NUL. A null buffer
+with zero capacity queries that size and returns `OSW_LIMIT`; short buffers are
+unchanged and also return `OSW_LIMIT`. Signed-out contexts return
+`OSW_SIGNED_OUT` without changing outputs. The getter only takes the identity
+mutex and makes no Steam/network call. The Lab persona is its configured name.
+An explicit online ID does not alter the raw persona. A launcher may bootstrap
+without a companion, read the raw persona, destroy that context, then create a
+fresh context with its own explicit online ID policy. Only one production
+context may exist at once; the override is fixed for that context.
