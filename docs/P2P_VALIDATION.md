@@ -708,3 +708,20 @@ and the installed DLL remain unchanged. Private logs are
 `out/directory-widening-negative-20261018.log`. This closes the specific fixture
 coverage gap; the earlier single-account live check found a room at the first
 distance and still does not establish live geographical expansion or WAN/SDR.
+
+## Invitation acceptance lifecycle regression, 2026-10-18
+
+After a native Lab user reported that accepting an invitation closes its inbox
+without entering the party, `platform-contracts` now exercises fresh entry,
+an already prepared target, and an already committed target. Each first accept
+completes with HTTP 204 and one copied accepted event. Acceptance does not
+commit provisional game membership or implicitly leave the previous party;
+those remain explicit guest requests. Duplicate acceptance is idempotent,
+the inbox reports the invitation as used, and reinvitation after leaving
+produces a fresh identity and accepted event.
+
+The targeted fixture passes in 0.15 seconds, with no provider production change.
+Private log: `out/invitation-lifecycle-test-20261018.log`. This verifies the
+provider side only. The native host must expose queued accepted events through
+both SystemService status polling and event consumption; the reported game
+failure remains open until that transition is fixed and retested.

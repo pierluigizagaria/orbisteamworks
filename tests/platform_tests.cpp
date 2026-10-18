@@ -689,6 +689,113 @@ void diagnostic_friends() {
     check(exceptions.quiet(), "diagnostic friend operations raised a host first-chance exception");
     std::cout << "diagnostic friend isolation passed; native invitations: 0; first-chance exceptions: 0\n";
 }
+
+void invitation_accept_lifecycle() {
+    // Cover fresh entry, prepared membership, and already committed membership.
+    for (int target_state : {0, 1, 2}) {
+        Config config{"", "LocalName", "5760", "1.21", "invite-lifecycle"};
+        Fixture social;
+        Platform platform(config, {true, self, "LocalName"}, social);
+        check(platform.start(), "invitation lifecycle fixture starts");
+        create(platform, social);
+        const Id target = lobby_id + 1;
+        const auto path = "/v1/sessions/" + std::to_string(target);
+        social.data[target] = social.data[lobby_id];
+        auto document = Json::parse(social.data[target]["osw.document"]);
+        document["creator"] = std::to_string(peer);
+        document["blobs"] = Json::object();
+        social.data[target]["osw.document"] = document.dump();
+        social.owners[target] = peer;
+        social.users[target] = {peer};
+        social.member_values[target][peer]["osw.member"] = "RemoteName";
+        social.friend_values = {{peer, "RemoteName", true}};
+        social.presence_values[peer] = social.presence_values[self];
+        social.presence_values[peer]["osw.name"] = "RemoteName";
+        const auto events_of = [](Update update, unsigned type) {
+            std::erase_if(update.events, [&](const Event &event) { return event.type != type; });
+            return update.events;
+        };
+        const auto invite = [&] {
+            platform.process({{SocialEvent::invitation, 0, target, peer, true},
+                              {SocialEvent::data, 0, target, target, true}});
+            return platform.take_update();
+        };
+        const auto entered = [&] {
+            social.users[target] = {peer, self};
+            platform.process({{SocialEvent::entered, social.call, target, self, true}});
+        };
+        if (target_state) {
+            platform.submit(request(2, "GET", path));
+            check(platform.take_update().results.empty(), "session preparation waits for join");
+            entered();
+            check(single(platform).http_status == 200, "session read prepares target membership");
+            if (target_state == 2) {
+                platform.submit(request(3, "POST", path + "/members", "{}"));
+                check(single(platform).http_status == 204, "fixture explicitly commits target");
+            }
+        }
+        auto received = events_of(invite(), OSW_INVITATION_RECEIVED);
+        check(received.size() == 1, "fresh invitation is delivered once");
+        const auto invitation = received[0].invitation_id;
+        check(events_of(invite(), OSW_INVITATION_RECEIVED).empty(),
+              "repeated pending invitation preserves its identity without duplicate delivery");
+        const auto accept = [&](Id request_id, const std::string &id, bool needs_join) {
+            const auto before = social.joins;
+            platform.submit({request_id, OSW_INVITE_ACCEPT, 30000,
+                             Json{{"invitation_id", id}}.dump()});
+            if (needs_join) {
+                auto pending = platform.take_update();
+                check(pending.results.empty() &&
+                          events_of(std::move(pending), OSW_INVITATION_ACCEPTED).empty() &&
+                          social.joins == before + 1,
+                      "fresh acceptance waits for the target join callback");
+                entered();
+            } else {
+                check(social.joins == before, "already joined acceptance issues no duplicate join");
+            }
+            auto update = platform.take_update();
+            check(update.results.size() == 1 && update.results[0].id == request_id &&
+                      update.results[0].status == OSW_OK && update.results[0].http_status == 204,
+                  "acceptance completes exactly once with OK and HTTP 204");
+            auto accepted = events_of(std::move(update), OSW_INVITATION_ACCEPTED);
+            check(accepted.size() == 1 && accepted[0].request_id == 0 &&
+                      accepted[0].account_id == peer && accepted[0].session_id == std::to_string(target) &&
+                      accepted[0].invitation_id == id && accepted[0].online_id == "RemoteName",
+                  "accepted event copies the exact target, invitation and referring friend");
+        };
+        accept(4, invitation, target_state == 0);
+        check(social.member_values[target][self]["osw.member"] ==
+                  (target_state == 2 ? "LocalName" : ""),
+              "acceptance preserves committed state and never commits provisional membership");
+        check(social.left.empty() && social.member_values[lobby_id][self]["osw.member"] == "LocalName",
+              "accepting another party does not remove the game's existing membership");
+        platform.submit({5, OSW_INVITE_ACCEPT, 30000, Json{{"invitation_id", invitation}}.dump()});
+        auto duplicate = platform.take_update();
+        check(duplicate.results.size() == 1 && duplicate.results[0].status == OSW_OK &&
+                  duplicate.results[0].http_status == 204 &&
+                  events_of(std::move(duplicate), OSW_INVITATION_ACCEPTED).empty(),
+              "duplicate acceptance is idempotent without a second accepted event");
+        auto repeated = invite();
+        check(events_of(repeated, OSW_INVITATION_RECEIVED).empty() &&
+                  events_of(std::move(repeated), OSW_INVITATION_ACCEPTED).empty(),
+              "repeated invitation while still joined cannot replay acceptance");
+        platform.submit(request(6, "GET", "/v1/users/me/invitations"));
+        const auto inbox = Json::parse(body(single(platform))).at("invitations");
+        check(inbox.size() == 1 && inbox[0]["invitationId"] == invitation && inbox[0]["usedFlag"] == true,
+              "inbox exposes the accepted invitation as used");
+        platform.submit(request(7, "POST", path + "/members", "{}"));
+        check(single(platform).http_status == 204, "game explicitly commits the accepted target");
+        platform.submit(request(8, "DELETE", path + "/members/me"));
+        check(single(platform).http_status == 204 && social.left == std::vector<Id>{target},
+              "only explicit guest leave removes the accepted target");
+        auto fresh = events_of(invite(), OSW_INVITATION_RECEIVED);
+        check(fresh.size() == 1 && fresh[0].invitation_id != invitation,
+              "new invitation after leaving receives a fresh usable identity");
+        accept(9, fresh[0].invitation_id, true);
+        platform.stop();
+    }
+}
+
 int main() {
     try {
         overlay_contracts();
@@ -700,6 +807,7 @@ int main() {
         exact_invitation_recipient();
         virtual_party_isolation();
         diagnostic_friends();
+        invitation_accept_lifecycle();
         Config config{"", "LocalName", "5760", "1.21", "normal"};
         Identity identity{true, self, "LocalName"};
         {
