@@ -725,3 +725,12 @@ Private log: `out/invitation-lifecycle-test-20261018.log`. This verifies the
 provider side only. The native host must expose queued accepted events through
 both SystemService status polling and event consumption; the reported game
 failure remains open until that transition is fixed and retested.
+
+The subsequent original-game Lab retest passed after native host `065173e`
+corrected its SystemService event count. The user confirms shared-group entry
+after accepting a fresh invite, corroborated by host acceptance/queue/delivery
+diagnostics and later guest requests. Provider production code remains
+`cc141ec`; no automatic membership or host-specific behavior was added here.
+This accepts the local host integration only, not remote Steam invitation
+delivery. The earlier public Lab race also reached results on both clients by
+explicit human confirmation; two-account Steam/SDR remains the written handoff.
