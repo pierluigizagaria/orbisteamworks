@@ -176,6 +176,17 @@ this same protocol through simulated lobby events; it does not place large blob
 contents directly in its shared lobby metadata. These events are separate from
 the P2P datagram/control-channel counters.
 
+Platform namespace checks use a fresh optional metadata snapshot for one
+synchronous decision. Lab reads the four namespace fields together; loading a
+session document includes its fifth field in that same read. Each later request,
+message or preparation pass reads current state again. No snapshot survives the
+decision or replaces the separate membership/owner checks. The default Social
+implementation returns no snapshot, so Steam retains its scalar getters and
+validation short circuits. Copied field conversion errors are raised only when
+the field is accessed; failure to read the current Lab store remains immediate.
+This reduces repeated Lab file reads without changing invitation readiness,
+blob framing, retry timing or membership semantics.
+
 On the receiving side:
 
 ```text

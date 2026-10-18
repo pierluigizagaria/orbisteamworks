@@ -690,6 +690,147 @@ void diagnostic_friends() {
     std::cout << "diagnostic friend isolation passed; native invitations: 0; first-chance exceptions: 0\n";
 }
 
+void session_load_snapshots() {
+    struct SnapshotFixture : Fixture {
+        bool snapshots, failed_store = false;
+        unsigned snapshot_reads = 0, member_reads = 0;
+        std::set<std::string> failed_fields;
+        std::vector<std::string> scalar_reads;
+        explicit SnapshotFixture(bool enabled) : snapshots(enabled) {}
+        std::string value(Id lobby, const std::string &key) {
+            if (failed_fields.contains(key)) throw std::runtime_error("fixture field failure");
+            return data[lobby][key];
+        }
+        std::string lobby_data(Id lobby, const std::string &key) override {
+            scalar_reads.push_back(key);
+            if (failed_store) throw std::runtime_error("fixture store failure");
+            return value(lobby, key);
+        }
+        std::vector<Id> members(Id lobby) override {
+            ++member_reads;
+            return Fixture::members(lobby);
+        }
+        std::optional<LobbySnapshot> lobby_snapshot(
+            Id lobby, const std::vector<std::string> &keys, bool membership) override {
+            if (!snapshots) return Social::lobby_snapshot(lobby, keys, membership);
+            ++snapshot_reads;
+            check(!membership, "session document load does not eagerly access membership");
+            if (failed_store) throw std::runtime_error("fixture store failure");
+            LobbySnapshot out;
+            for (const auto &key : keys) out.data[key].read([&] { return value(lobby, key); });
+            return out;
+        }
+    };
+    const Config config{"", "LocalName", "snapshot-title", "1", "session-load"};
+    const std::vector<std::string> keys{
+        "osw.protocol", "osw.title", "osw.build", "osw.realm", "osw.document"};
+    const Json document{
+        {"protocol", "1"}, {"title", config.title}, {"build", config.build}, {"realm", config.realm},
+        {"description", {{"sessionType", "owner-bind"}, {"sessionPrivacy", "private"},
+                         {"sessionMaxUser", 8}, {"sessionName", "before"}}},
+        {"created", Id{1}}, {"creator", std::to_string(peer)}, {"blobs", Json::object()}};
+    const auto path = "/v1/sessions/" + std::to_string(lobby_id);
+    const auto initialize = [&](SnapshotFixture &social) {
+        social.data[lobby_id] = {{keys[0], "1"}, {keys[1], config.title},
+                                {keys[2], config.build}, {keys[3], config.realm},
+                                {keys[4], document.dump()}};
+        social.owners[lobby_id] = peer;
+        social.users[lobby_id] = {peer};
+        social.member_values[lobby_id][peer]["osw.member"] = "RemoteName";
+    };
+    for (bool snapshots : {false, true}) {
+        // A foreign namespace must not expose later conversion failures; the
+        // default backend must not invoke later scalar getters at all.
+        for (std::size_t mismatch = 0; mismatch != 4; ++mismatch) {
+            SnapshotFixture social(snapshots);
+            initialize(social);
+            social.data[lobby_id][keys[mismatch]] = "foreign";
+            social.failed_fields.insert(keys[mismatch + 1]);
+            Platform platform(config, {true, self, "LocalName"}, social);
+            platform.submit(request(1, "GET", path));
+            check(platform.take_update().results.empty() && social.joins == 0 &&
+                      social.requested == std::vector<Id>{lobby_id},
+                  "foreign namespace retains metadata refresh without joining or later errors");
+            check(snapshots ? social.snapshot_reads == 1 && social.scalar_reads.empty()
+                            : social.scalar_reads == std::vector<std::string>(
+                                  keys.begin(), keys.begin() + mismatch + 1),
+                  "session load preserves scalar read order or uses one copied read");
+        }
+        for (std::size_t failure = 0; failure != keys.size() + 1; ++failure) {
+            SnapshotFixture social(snapshots);
+            initialize(social);
+            if (failure == keys.size()) social.failed_store = true;
+            else social.failed_fields.insert(keys[failure]);
+            Platform platform(config, {true, self, "LocalName"}, social);
+            platform.submit(request(1, "GET", path));
+            const auto update = platform.take_update();
+            check(update.results.size() == 1 && update.results[0].status == OSW_INVALID_ARGUMENT &&
+                      social.joins == 0 && social.requested.empty(),
+                  "needed field and current store errors retain the existing failed request");
+        }
+        SnapshotFixture social(snapshots);
+        initialize(social);
+        Platform platform(config, {true, self, "LocalName"}, social);
+        platform.submit(request(1, "GET", path));
+        check(platform.take_update().results.empty() && social.joins == 1 &&
+                  (snapshots ? social.snapshot_reads == 1 && social.scalar_reads.empty()
+                             : social.scalar_reads == keys),
+              "valid document reaches the same provisional join after five fields");
+        social.users[lobby_id].push_back(self);
+        platform.process({{SocialEvent::entered, social.call, lobby_id, self, true}});
+        check(Json::parse(body(single(platform)))["sessionName"] == "before" &&
+                  social.member_values[lobby_id][self]["osw.member"].empty(),
+              "prepared document remains visible without committing membership");
+        auto changed = document;
+        changed["description"]["sessionName"] = "after";
+        social.data[lobby_id][keys[4]] = changed.dump();
+        platform.submit(request(2, "GET", path));
+        check(Json::parse(body(single(platform)))["sessionName"] == "after",
+              "next load observes changed document instead of retaining a snapshot");
+        const SocialEvent message{SocialEvent::message, 0, lobby_id, peer, true, 0, "{}"};
+        social.snapshot_reads = social.member_reads = 0;
+        social.scalar_reads.clear();
+        social.failed_fields.insert(keys[4]);
+        platform.process({message});
+        check(social.member_reads == 1 &&
+                  (snapshots ? social.snapshot_reads == 1 && social.scalar_reads.empty()
+                             : social.scalar_reads == std::vector<std::string>(keys.begin(), keys.begin() + 4)),
+              "message namespace uses its own fresh read and never accesses session document");
+        for (std::size_t mismatch = 0; mismatch != 4; ++mismatch) {
+            initialize(social);
+            social.failed_fields.clear();
+            social.failed_fields.insert(keys[mismatch + 1]);
+            social.data[lobby_id][keys[mismatch]] = "foreign";
+            social.member_reads = social.snapshot_reads = 0;
+            social.scalar_reads.clear();
+            platform.process({message});
+            check(social.member_reads == 0 &&
+                      (snapshots ? social.snapshot_reads == 1 && social.scalar_reads.empty()
+                                 : social.scalar_reads == std::vector<std::string>(
+                                       keys.begin(), keys.begin() + mismatch + 1)),
+                  "next message revocation preserves namespace short circuits before membership");
+        }
+        initialize(social);
+        social.failed_fields.clear();
+        social.failed_store = true;
+        bool failed = false;
+        try { platform.process({message}); } catch (const std::runtime_error &) { failed = true; }
+        check(failed && social.member_reads == 0,
+              "message current store failure propagates instead of accepting earlier namespace");
+        social.failed_store = false;
+        social.data[lobby_id][keys[3]] = "foreign";
+        social.failed_fields.insert(keys[4]);
+        platform.submit(request(3, "GET", path));
+        check(platform.take_update().results.empty() && !social.requested.empty(),
+              "later namespace revocation excludes a previously prepared document");
+        social.failed_fields.clear();
+        social.data.erase(lobby_id);
+        platform.submit(request(4, "GET", path));
+        check(platform.take_update().results.empty() && social.joins == 1,
+              "removed session never reuses a previous compatible document");
+    }
+}
+
 void invitation_accept_lifecycle() {
     // Cover fresh entry, prepared membership, and already committed membership.
     for (int target_state : {0, 1, 2}) {
@@ -807,6 +948,7 @@ int main() {
         exact_invitation_recipient();
         virtual_party_isolation();
         diagnostic_friends();
+        session_load_snapshots();
         invitation_accept_lifecycle();
         Config config{"", "LocalName", "5760", "1.21", "normal"};
         Identity identity{true, self, "LocalName"};

@@ -140,11 +140,17 @@ struct Platform::Impl {
         json(id, status,
              Json{{"error", {{"code", status}, {"message", "Platform request failed"}}}});
     }
+    bool compatible(Id lobby, const std::optional<LobbySnapshot> &state) {
+        const auto data = [&](const char *key) {
+            return state ? state->data.at(key).get() : social.lobby_data(lobby, key);
+        };
+        return data("osw.protocol") == (config.virtual_endpoints ? "2" : "1") &&
+               data("osw.title") == config.title && data("osw.build") == config.build &&
+               data("osw.realm") == config.realm;
+    }
     bool compatible(Id lobby) {
-        return social.lobby_data(lobby, "osw.protocol") == (config.virtual_endpoints ? "2" : "1") &&
-               social.lobby_data(lobby, "osw.title") == config.title &&
-               social.lobby_data(lobby, "osw.build") == config.build &&
-               social.lobby_data(lobby, "osw.realm") == config.realm;
+        return compatible(lobby, social.lobby_snapshot(
+                                     lobby, {"osw.protocol", "osw.title", "osw.build", "osw.realm"}, false));
     }
     bool compatible_document(const Json &document) {
         return document.is_object() && text(document, "protocol") == (config.virtual_endpoints ? "2" : "1") &&
@@ -247,9 +253,12 @@ struct Platform::Impl {
                     {"friendList", entries}};
     }
     std::optional<Json> load(Id lobby) {
-        if (!compatible(lobby))
+        const auto state = social.lobby_snapshot(
+            lobby, {"osw.protocol", "osw.title", "osw.build", "osw.realm", "osw.document"}, false);
+        if (!compatible(lobby, state))
             return {};
-        const auto bytes = social.lobby_data(lobby, "osw.document");
+        const auto bytes = state ? state->data.at("osw.document").get()
+                                 : social.lobby_data(lobby, "osw.document");
         if (bytes.size() > max_document)
             return {};
         auto document = Json::parse(bytes, nullptr, false);

@@ -734,3 +734,69 @@ diagnostics and later guest requests. Provider production code remains
 This accepts the local host integration only, not remote Steam invitation
 delivery. The earlier public Lab race also reached results on both clients by
 explicit human confirmation; two-account Steam/SDR remains the written handoff.
+
+## Current platform metadata reads and invitation timing, 2026-10-18
+
+The user subsequently reported delay while the native inbox displays acceptance.
+An isolated actual-DLL Lab benchmark separates receipt, explicit acceptance and
+prior preparation. Each sample uses two in-process contexts, a fresh UUID hub,
+canonical endpoint mode and synthetic session data. No publisher child, game,
+renderer, Steam client or active profile hub participates. Results measure C API
+submission to observed HTTP 204/event, not click-to-UI or guest follow-up time.
+The 52,096-byte synthetic image comes from the existing platform fixture; it is
+not a measured image size from the human session.
+
+Baseline production `cc141ec`, DLL
+`220bcad3605cb716f7c3d33195b644424ab7875b0af5323ee28b5cc3e0122e87`, took a
+median 73.747 ms to accept a fresh target with a 64-byte inline image and
+3942.151 ms with the large image (three samples each). Preparing the large
+target through GET first moved approximately 3.76 s into that GET, then accept
+took 8.983 ms. Acceptance waits for referenced blobs by contract; no fixed
+success wait was found. It remains provisional until the guest commits it.
+
+A first candidate batched only the namespace/document reads in `Platform::load`.
+In an interleaved comparison it did not materially improve the large transfer:
+3580.151 ms baseline versus 3603.340 ms candidate. The final change also batches
+the four namespace fields within each `compatible()` decision, including each
+received blob message. Lab supplies one fresh read; Steam's default optional
+snapshot remains absent and preserves its scalar getter/short-circuit behavior.
+Snapshots are never retained across decisions, messages or worker passes.
+Membership, owner checks, blob framing, window, retry/backoff and deadlines are
+unchanged. A failed current read is never replaced with a cached authorization.
+
+The unchanged benchmark workload was then run in alternating
+baseline/candidate, candidate/baseline, baseline/candidate order. Three samples
+per binary/case gave the following median [minimum, maximum] values in ms:
+
+| Operation | Baseline | Final candidate |
+| --- | ---: | ---: |
+| Fresh accept, 64-byte image | 69.338 [64.478, 83.403] | 47.323 [40.873, 57.529] |
+| Fresh accept, 52,096-byte image | 3612.993 [3550.004, 3719.516] | 2604.737 [2523.774, 2906.391] |
+| Preparation GET, 52,096-byte image | 3767.377 [3566.923, 3870.509] | 2689.537 [2624.259, 2786.325] |
+
+The large fresh-accept median decreased 27.9% in this bounded Lab comparison.
+Already prepared acceptance remained sensitive to one worker tick (approximately
+8–22 ms in the final candidate), with no demonstrated improvement. All runs
+verified byte-exact images, one copied accepted event, idempotent duplicate
+acceptance and no implicit membership commit. HTTP completion and accepted event
+were observed in the same polling cycle. With only three samples, nearest-rank
+p95 equals the maximum and is not a population percentile estimate. Host load
+was not controlled, so these figures do not predict Steam or human-dialog time.
+
+MSVC Release static/shared builds completed at parallelism two. The full
+independent suite passed **45/45 in 30.90 s**, including new scalar/snapshot
+equivalence, validation-order, delayed-field-error, current-store-failure,
+namespace-revocation and document-freshness assertions in `platform-contracts`.
+Independent parent and publisher reviews found no blocker. The final DLL hash
+is `05aa1e3b14a6eccb709e111426cb8f849156d6b9982aff173cfc7eaeeb1c7e27`, pinned
+under `build/pinned-lab-invitation/05aa1e3b14a6eccb/` without another build.
+
+Private evidence: `out/lab-invitation-timing-20261018.md` contains exact commands
+and pins; `out/lab-invitation-timing-20261018.json` is the initial baseline;
+`out/lab-invitation-load-20261018-comparison.json` and
+`out/lab-invitation-namespace-20261018-comparison.json` retain both comparisons;
+`out/lab-invitation-snapshot-full-20261018.log` records the full build/suite.
+The frozen timing helper hash is
+`a54a6079f703ec86fe4194e7459d3af47e04c076813bdc7337309ce05e8cac40`.
+This records component tests and measurements only; installation, optional
+integration checks and a human retest of the new candidate remain separate.
