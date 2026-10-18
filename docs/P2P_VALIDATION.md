@@ -643,8 +643,9 @@ with a committed party/invitation: local authentication, preserved address
 identity, private statistics, follower selection, bidirectional proxy traffic
 and member departure. Default integration emits 68/44 timing records; the party
 run with timing disabled emits none. Those fixtures live in the consuming
-publisher project and remain separate from the library's ordinary tests. Human
-entry timing on this DLL and a complete public race remain unverified.
+publisher project and remain separate from the library's ordinary tests. At
+this benchmark checkpoint, human entry timing and a complete public race were
+unverified; the subsequent entry retest is recorded below.
 
 Previous DLL SHA-256:
 `251c4d97a305ef547785bfa5fbdefb36009961de48287b2a676126c4ca488e02`.
@@ -657,3 +658,35 @@ JSON records, `out/lab-snapshot-candidate-build.log`,
 `out/lab-snapshot-candidate-final-build.log`, and
 `out/lab-snapshot-candidate-ctest-host.log`. This benchmark does not read active
 profile hubs, operate game windows or modify the installed profiles.
+
+## Subsequent game entry and abrupt child lifetime, 2026-10-18
+
+The user confirms shared public lobby entry with the snapshot DLL. Four
+original-game local Lab intervals, from the joining publisher's search receipt
+to the first host document reporting both connected, measure 2.070416,
+2.133127, 1.964782 and 1.929805 seconds. The previous provider's two comparable
+intervals were 4.782978 and 4.618266 seconds. All 686 captured timing records
+are paired with no traced errors/timeouts. This small sample is not a precise
+button-to-UI or Steam/WAN latency estimate; complete public racing is still
+pending. Host/publisher timing evidence remains an optional integration record,
+not a dependency of the library's build or tests.
+
+The additional Windows `child-abrupt-parent-exit` regression exercises the
+production `Child` launcher with a standalone fixture executable, without a
+game, Lab hub, Steam client or publisher. The fixture companion never reads
+stdin, so EOF cannot satisfy the assertion. After acquiring an exact duplicated
+process handle and verifying the companion is alive, the controller checks
+both host `std::_Exit` (no destructors) and forced termination of its owned
+host. The companion must terminate within the bounded wait. A separate safety
+job remains open during assertions and cleans up only fixture descendants on
+failure. There are no name-based process searches or termination decisions.
+
+The targeted MSVC build and CTest pass in 0.45 seconds. A build-local negative
+control removing the production `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag fails
+with `companion survived abrupt parent exit`, demonstrating that the outer
+safety job does not make this test pass. Cleanup leaves no fixture processes.
+Production source and the installed DLL are unchanged; the prior 44-test run
+remains its own evidence, supplemented by this single new regression. Private
+logs: `out/child-lifetime-test-20261018.log` and
+`out/child-lifetime-negative-20261018.log`. The negative variant is confined
+to the ignored build directory and is not a shipped configuration.
