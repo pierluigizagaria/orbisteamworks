@@ -587,3 +587,73 @@ Candidate DLL SHA-256:
 The previous/pinned DLL and profiles were not changed. No active profile hub
 was read. The measured benefit is Lab-specific; the fraction of the public
 game-entry wait attributable to it is still unknown.
+
+## Fresh Lab lobby snapshots and opaque roundtrip timing (2026-10-18)
+
+Human public-entry traces isolated a repeated interval of approximately three
+seconds between the publisher's Join push write and the host's first report of
+both players connected, with opaque UDP exchange already progressing. Source
+inspection found that Lab room authorization reopened the same hub for each
+scalar metadata, owner and membership getter. A successful member check used
+ten reads; a stable one-room/one-proxy refresh used 34. These are source-path
+counts, not measured physical disk operations or a decomposition of game time.
+
+Provider `cc141ec` adds an optional internal copied lobby read. Lab obtains the
+requested fields with one fresh locked Store. A membership decision now reads
+once and a room record reads once; the same stable refresh uses five reads.
+There is no authorization cache, polling change, shortened timeout, skipped
+identity check, C ABI extension or protocol change. Current file-read failures
+remain immediate. Conversion errors are retained in copied fields and raised
+only on access, so namespace rejection still precedes unrelated field errors.
+Steam and other backends decline the optional read and use the previous scalar
+calls in their previous order, including their error side effects.
+
+The private benchmark loads the actual DLL through the public C API and creates
+two Lab contexts in a new UUID hub. It enables canonical endpoints and sends
+only to returned proxy routes. The same contexts run friend scope first, then
+room scope; each uses two warmups and sixteen 64-byte ping-pong samples with
+alternating initiators. Every packet and both route directions are checked.
+There is no API polling within the timed exchanges. Each context's four
+transport counters increases by exactly sixteen per measured phase; rejection
+counts stay zero. The immediate Python echo costs less than one millisecond.
+
+| Pair and scope | Previous median, ms | Snapshot median, ms | Previous p95/max, ms | Snapshot p95/max, ms |
+| --- | ---: | ---: | ---: | ---: |
+| First, friend control | 77.935 | 77.717 | 102.032 | 100.018 |
+| First, room | 368.683 | 84.412 | 556.956 | 137.342 |
+| Confirmation, friend control | 78.002 | 77.507 | 94.506 | 86.938 |
+| Confirmation, room | 407.664 | 93.223 | 560.297 | 135.488 |
+
+The confirmation repeats baseline then candidate once, with the unchanged
+harness and fresh hubs. With sixteen samples, nearest-rank p95 equals maximum;
+this is not a production tail estimate. Room setup is measured separately and
+falls from 573.824 to 183.731 ms in the first pair and 663.545 to 165.946 ms in
+the confirmation. Friend RTT remains approximately unchanged. These results
+support the specific Lab correction but do not establish full game-entry time,
+Steam/SDR latency, or behavior with a committed platform party.
+
+The MSVC static/shared build passes all 44 standalone Windows tests in 31.56 s
+with host loopback access. New tests cover prejoin visibility, independent
+copies, fresh changes/departures/deletion, read-sharing failures, event
+preservation, zero writes, deferred conversion errors, scalar short circuits
+with backend side effects, and revocation before a subsequent send without an
+event. Independent reviews found no remaining blocker. The actual DLL also
+passes the optional two-publisher integration with separate public searches and
+with a committed party/invitation: local authentication, preserved address
+identity, private statistics, follower selection, bidirectional proxy traffic
+and member departure. Default integration emits 68/44 timing records; the party
+run with timing disabled emits none. Those fixtures live in the consuming
+publisher project and remain separate from the library's ordinary tests. Human
+entry timing on this DLL and a complete public race remain unverified.
+
+Previous DLL SHA-256:
+`251c4d97a305ef547785bfa5fbdefb36009961de48287b2a676126c4ca488e02`.
+Snapshot DLL SHA-256:
+`220bcad3605cb716f7c3d33195b644424ab7875b0af5323ee28b5cc3e0122e87`.
+Frozen harness SHA-256:
+`95cda36524fe073b21ad8d00dca0457b2aff0aaf1a9c4937d9ca6d2e08500f90`.
+Private evidence and exact commands: `out/lab-udp-timing-20261018.md`, its four
+JSON records, `out/lab-snapshot-candidate-build.log`,
+`out/lab-snapshot-candidate-final-build.log`, and
+`out/lab-snapshot-candidate-ctest-host.log`. This benchmark does not read active
+profile hubs, operate game windows or modify the installed profiles.
