@@ -90,6 +90,8 @@ add_test(NAME steam-rename-contracts COMMAND ${CMAKE_COMMAND} -E env
 add_executable(osw-steam-account-tests ../src/steam/testing/account_tests.cpp)
 target_link_libraries(osw-steam-account-tests PRIVATE orbisteamworks osw-test-api)
 add_test(NAME steam-account-change-contracts COMMAND osw-steam-account-tests $<TARGET_FILE:osw-test-api>)
+# These cases exercise optional command-line tools, not the library targets.
+if(OSW_BUILD_TOOLS)
 function(failure_case name program library scenario code message)
   add_test(NAME ${name} COMMAND ${CMAKE_COMMAND}
     -DPROGRAM=$<TARGET_FILE:${program}> -DLIBRARY=${library}
@@ -112,6 +114,7 @@ foreach(scenario shutdown-pending shutdown-ready)
     -DSCENARIO=${scenario} -DTOKEN=${CMAKE_CURRENT_BINARY_DIR}/${scenario}.txt
     -P ${CMAKE_CURRENT_SOURCE_DIR}/shutdown.cmake)
 endforeach()
+endif()
 
 add_executable(osw-runtime-error-tests runtime_errors.cpp)
 target_include_directories(osw-runtime-error-tests PRIVATE ../src)
