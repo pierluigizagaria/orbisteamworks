@@ -29,5 +29,5 @@ Each player uses their own Steam account. Invitations require a running,
 compatible integration; cold-launch routing is unsupported. Missing Steam
 dependencies leave the provider signed out with a reason.
 
-The [documentation index](docs/README.md) separates current interfaces from
-historical host setups and validation records.
+The [documentation index](docs/README.md) links the architecture and interface
+references.

@@ -10,9 +10,8 @@ Write project documentation in English; respond in the user's language.
 - [Companion protocol](docs/COMPANION_PROTOCOL.md) when changing P2P or children.
 - [Sources](docs/SOURCES.md) when making platform-compatibility claims.
 
-The feasibility, architecture and P2P design records contain dated decisions.
-Current public interfaces and explicit user instructions take precedence over
-superseded host choices, fixed-AppID rules and historical publication restrictions.
+Current public interfaces and explicit user instructions define the integration
+scope. Do not reintroduce host-specific assumptions into reusable contracts.
 
 ## Architecture and ownership
 

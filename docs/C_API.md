@@ -62,7 +62,7 @@ ticket failures and incompatible callback payloads. A fatal backend failure
 completes pending work and stops the library thread; completed buffers remain
 owned until release. A ticket-issuance failure leaves retry available. This is
 coverage of the tested failure contracts, not a guarantee against every possible
-internal exception. See the work log for build and game-acceptance status.
+internal exception.
 
 `FRIENDS` returns a `friendList` snapshot with decimal-string account IDs,
 online IDs, `presence.onlineStatus` and `personalDetail.displayName` (the
@@ -211,8 +211,6 @@ directory/control events and loopback UDP for race traffic. It simulates friends
 among active clients sharing that hub. Peer identity is checked against the
 registered lab UDP endpoint. This is a test facility, never Steam authentication.
 Process liveness removes abandoned lab registrations; no menu-idle expiry exists.
-The Windows sandbox can silently drop loopback UDP: run explicitly authorized
-network acceptance tests outside that sandbox. Fixture results are not live gates.
 
 ## Optional canonical UDP endpoints (additive exports, 2026-10-16)
 

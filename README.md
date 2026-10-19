@@ -24,7 +24,7 @@ The library does not contact Sony services or parse game packets.
 
 ## Build
 
-Windows preview binaries, the public header and optional tools are available in
+Windows preview binaries, the public header and authentication helper are available in
 [Releases](https://github.com/pierluigizagaria/orbisteamworks/releases).
 Consumers that embed the static library should build from source.
 
@@ -118,10 +118,8 @@ The client AppID defaults to **480** and can be set before startup with
 The separate central authentication helper currently supports AppID 480 only.
 Cold-launch invitations are unsupported.
 
-Windows x64 is the exercised runtime. Linux code is present but live runtime
-validation is pending; macOS is not currently supported.
-Offline tests verify library contracts, not game compatibility or a successful
-multiplayer session.
+Windows x64 is the supported preview platform. Linux support is experimental;
+macOS is not currently supported.
 
 ## Documentation
 
@@ -129,7 +127,7 @@ multiplayer session.
 - [Build options](docs/BUILDING.md) and [host integration](docs/INTEGRATION.md)
 - [C API](docs/C_API.md), [companion protocol](docs/COMPANION_PROTOCOL.md) and
   [token / authentication helper protocol](docs/OSW1_TOKEN_AND_HELPER.md)
-- [Documentation index](docs/README.md), including design and validation history
+- [Architecture and reference index](docs/README.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

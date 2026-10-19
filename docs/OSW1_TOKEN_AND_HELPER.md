@@ -1,6 +1,6 @@
 # osw1 token and auth-helper protocol
 
-Version `osw1`. Date: 2026-10-15.
+Protocol version: `osw1`.
 
 This specification describes implemented behavior, so that another private
 server can admit players by Steam identity with the same token and helper.
@@ -8,16 +8,16 @@ That server does not have to be the Demonware Server. The format is a
 replacement design (I). It is not a Sony or Valve format and asserts no PSN
 behavior.
 
-Pinned implementations:
+Implementation boundaries:
 
 | Role | Source |
 | --- | --- |
-| Token issuer and codec | orbiSteamworks `fdca43c`: `src/core/credential.cpp`, `src/steam/backend.cpp` |
-| Auth helper | orbiSteamworks `fdca43c`: `server/auth-helper/main.cpp` (`osw-auth-helper`) |
-| Reference verifier | Demonware Server `6e664b2` (`feat/steam-admission`): `internal/platform/steam/`, `internal/store/steam.go`, `internal/platform/admission.go` |
+| Token issuer and codec | `src/core/credential.cpp`, `src/steam/backend.cpp` |
+| Auth helper | `server/auth-helper/main.cpp` (`osw-auth-helper`) |
+| Consumer | A server that implements the validation, replay and persistence contract below |
 
-Measured Steam behavior comes from [GATE1_AUTH_SPIKE.md](GATE1_AUTH_SPIKE.md):
-AppID 480, Steamworks SDK 1.65 flat API.
+The central helper supports AppID 480. The runtime flat-API declarations were
+checked against Steamworks SDK 1.65; see [Sources](SOURCES.md).
 
 ## Roles and flow
 
@@ -323,9 +323,8 @@ Replay rules:
 - **Hashing.** Hash the decoded bytes, never the hex text.
 - **Shared store.** Servers that share one identity namespace must share the
   consumed set and the binding table.
-- **Defense in depth.** In gate 1, Steam itself refused replays after the
-  session ended (result 6, or 7 in a new validator process). The persistent
-  set does not depend on that behavior.
+- **Defense in depth.** Persistent replay rejection does not depend on Steam
+  rejecting a previously consumed ticket in a later validation session.
 
 Lease lifecycle:
 - **Expiry.** An admission is held until the game claims it. In Demonware
@@ -333,8 +332,8 @@ Lease lifecycle:
   Unclaimed admissions expire with the 120-second publisher-ticket handoff
   window. This window is a Demonware detail, not a Steam ticket lifetime.
 - **Single claim.** Each admission can be claimed once.
-- **Release.** Closing the claimed connection sends `END`. Authentication,
-  signing or write failures release the admission too.
+- **Release.** Closing the claimed connection sends `END`. Authentication or
+  response-write failures release the admission too.
 - **No cutoffs.** There is no elapsed-time or idle cutoff for established
   connections.
 
@@ -360,9 +359,5 @@ Instance separation:
 5. **Use the online ID only after the binding check.** Use SteamID64 as the
    account key everywhere, losslessly.
 6. **Accept the AppID 480 limits.** Players appear as "Playing Spacewar".
-   Spacewar's namespace is shared with every other project. Valve tolerates
-   this use without supporting it.
-
-Gate 1 established anonymous AppID 480 validation, server binding and the
-replay behavior. It did not establish ticket freshness, multi-account
-operation or cold-launch routing.
+   Its application namespace is shared; the project-specific title and realm
+   checks remain required.
