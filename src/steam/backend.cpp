@@ -161,6 +161,7 @@ class SteamBackend final : public core::Backend {
                     identity_value.signed_in ? 0 : static_cast<int>(ErrorCode::signed_out);
             }
         }
+        fail_account_change();
         core::Update update;
         if (platform && runtime) {
             auto events = runtime->take_social_events();
@@ -234,6 +235,28 @@ class SteamBackend final : public core::Backend {
         stop();
         identity_value.reason = "Steam runtime failed";
         identity_value.reason_code = code;
+        failed = true;
+        return true;
+    }
+    // The context's identity, tickets and peer state belong to the account it
+    // started with. Another signed-in account behind the same client ends it;
+    // the host restarts to adopt the new one. A temporary sign-out does not.
+    bool fail_account_change() {
+        if (!runtime || !runtime->logged_on())
+            return false;
+        const auto account = runtime->id();
+        if (!account || account == identity_value.account_id)
+            return false;
+        if (platform) {
+            auto update = platform->take_update();
+            for (const auto &result : update.results)
+                finish(result.id, OSW_SIGNED_OUT);
+        }
+        if (pending)
+            finish(pending->id, OSW_SIGNED_OUT);
+        stop();
+        identity_value.reason = "Steam account changed; restart required";
+        identity_value.reason_code = static_cast<int>(ErrorCode::signed_out);
         failed = true;
         return true;
     }

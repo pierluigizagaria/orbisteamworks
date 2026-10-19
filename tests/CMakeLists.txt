@@ -87,6 +87,9 @@ add_executable(osw-steam-rename-tests ../src/steam/testing/rename_tests.cpp)
 target_link_libraries(osw-steam-rename-tests PRIVATE orbisteamworks osw-test-api nlohmann_json::nlohmann_json)
 add_test(NAME steam-rename-contracts COMMAND ${CMAKE_COMMAND} -E env
   OSW_FIXTURE_SCENARIO=p2p $<TARGET_FILE:osw-steam-rename-tests> $<TARGET_FILE:osw-test-api>)
+add_executable(osw-steam-account-tests ../src/steam/testing/account_tests.cpp)
+target_link_libraries(osw-steam-account-tests PRIVATE orbisteamworks osw-test-api)
+add_test(NAME steam-account-change-contracts COMMAND osw-steam-account-tests $<TARGET_FILE:osw-test-api>)
 function(failure_case name program library scenario code message)
   add_test(NAME ${name} COMMAND ${CMAKE_COMMAND}
     -DPROGRAM=$<TARGET_FILE:${program}> -DLIBRARY=${library}

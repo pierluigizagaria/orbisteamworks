@@ -8,6 +8,7 @@
 #include <deque>
 #include <vector>
 #include <cstring>
+#include <atomic>
 #include <mutex>
 #ifdef _WIN32
 #define EXPORT extern "C" __declspec(dllexport)
@@ -151,7 +152,9 @@ EXPORT void *SteamAPI_SteamUser_v023() { return &marker; }
 EXPORT void *SteamAPI_SteamGameServer_v015() { return &marker; }
 EXPORT bool SteamAPI_ISteamUser_BLoggedOn(void *) { return scenario() != "signed-out"; }
 EXPORT bool SteamAPI_ISteamGameServer_BLoggedOn(void *) { return false; }
-EXPORT Id SteamAPI_ISteamUser_GetSteamID(void *) { return 1; }
+std::atomic<Id> user_id{1};
+EXPORT void OSWFixtureSetSteamID(Id id) { user_id = id; }
+EXPORT Id SteamAPI_ISteamUser_GetSteamID(void *) { return user_id; }
 EXPORT Id SteamAPI_ISteamGameServer_GetSteamID(void *) { return 2; }
 EXPORT Ticket SteamAPI_ISteamUser_GetAuthSessionTicket(void *, void *data, int, std::uint32_t *size,
                                                        const Identity *) {

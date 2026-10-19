@@ -10,6 +10,11 @@ production context may exist in a process. Steam owns one signed-in account.
 initialization succeeded. Steam symbols and callback dispatch run only on that
 thread. The library never invokes host or guest callbacks. Missing dependencies
 produce signed-out identity with a reason, rather than fabricated success.
+A context keeps the SteamID it started with. If another account becomes signed in
+behind the same Steam client, the context fails (signed out, account ID 0, reason
+`Steam account changed; restart required`) and publishes `OSW_IDENTITY_CHANGED`;
+the host creates a new context to adopt that account. A temporary sign-out does not
+fail the context.
 
 The opt-in Lab backend reports terminal storage failures through the same
 `osw_identity.reason_code = OSW_UNAVAILABLE` and a fixed, non-sensitive reason
