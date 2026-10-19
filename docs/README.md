@@ -17,5 +17,5 @@
 - [P2P transport](P2P_DESIGN.md): room discovery, endpoints and authorization.
 - [Sources](SOURCES.md): platform references and compatibility scope.
 
-These interfaces are owned by this repository. A host, bridge or publisher uses
+These interfaces are owned by this repository. A host, bridge or server uses
 them without importing another component's sources or private runtime state.

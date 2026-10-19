@@ -38,9 +38,9 @@ if(WIN32)
 endif()
 set(OSW_TARGETS orbisteamworks osw_credential osw_steam)
 if(OSW_BUILD_SHARED)
-  # Compiled separately from the static library so that the plugin's runtime
-  # library and symbol visibility never change what in-process hosts link.
-  # Only the osw_* C functions are exported (see docs/PLUGIN_DESIGN.md).
+  # Compiled separately from the static library so that the shared library's
+  # runtime and symbol visibility never change what in-process hosts link.
+  # Only the osw_* C functions are exported (see docs/BUILDING.md).
   add_library(orbisteamworks_shared SHARED ${OSW_LIBRARY_SOURCES} src/core/credential.cpp src/steam/runtime.cpp)
   target_include_directories(orbisteamworks_shared PUBLIC include PRIVATE src)
   target_link_libraries(orbisteamworks_shared PRIVATE nlohmann_json::nlohmann_json Threads::Threads ${CMAKE_DL_LIBS})

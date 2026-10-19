@@ -24,7 +24,8 @@ progression or import a host's implementation. Integrations use the
 - `src/core/`: platform model, requests, events, session payloads, directory,
   endpoint registry and transport coordination.
 - `src/steam/`: runtime loader, flat-API declarations and Steam backend.
-- `src/fixture/` and `src/lab/`: explicitly simulated development backends.
+- `src/lab/`: the explicitly selected simulated test backend.
+- `src/steam/testing/`: a fake Steam API library and its tests.
 - `server/auth-helper/`: optional pipe-based authentication helper.
 - `tests/`: automated contracts and fixtures.
 
@@ -39,8 +40,8 @@ copied on entry. Completed buffers belong to the library until the caller releas
 them. Stopping joins the worker and aborts pending requests; destruction releases
 all retained state. Callers must stop concurrent API use before destruction.
 
-Individual requests have bounded waits. Established sessions have no elapsed-time
-or menu-idle cutoff. An unavailable Steam client, missing dependency, unsupported
+Individual requests have bounded waits; established sessions have no idle or
+session-length limit. An unavailable Steam client, missing dependency, unsupported
 operation or account change produces an explicit failure.
 
 ## Sessions and invitations

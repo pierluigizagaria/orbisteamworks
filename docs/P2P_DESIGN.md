@@ -14,14 +14,14 @@ Each component builds independently; no shared source tree or private runtime
 layout is required.
 
 Peers must agree on AppID, title, build, realm and transport version. AppID is
-configurable before startup and defaults to 480. Application options such as an
-economy mode do not belong in the platform namespace.
+configurable before startup and defaults to 480. Keep application settings that
+should not separate players out of the title, build and realm.
 
 ## Endpoint modes
 
 | Mode | Consumer behavior |
 | --- | --- |
-| Legacy | Uses provider-supplied per-peer local proxy endpoints |
+| Default | Uses provider-supplied per-peer local proxy endpoints |
 | `virtual-v1` | Uses stable canonical endpoints and the public route API for host socket translation |
 | `loopback-v1` | Uses canonical endpoints bound directly by the provider; no host socket translation is required |
 
@@ -50,15 +50,14 @@ metadata or peer messages.
 
 Application room operations pass over the companion pipe; opaque UDP traffic
 uses the peer transport. An application must explicitly allow its room message
-schemas. The provider does not forward arbitrary publisher service requests.
+schemas. The provider does not forward arbitrary application service requests.
 The room ends when its owner leaves; owner migration is not implemented.
 
 ## Lifecycle
 
 The library starts a configured companion with private stdin/stdout pipes and
 supervises its lifetime. Windows uses a kill-on-close Job Object. EOF and process
-failure end the owned session. Individual operations are bounded; active sessions
-have no arbitrary idle cutoff.
+failure end the owned session. Individual operations are bounded.
 
 See [host integration](INTEGRATION.md) for setup, and the C API and companion
 references for exact schemas, capabilities and ownership rules.

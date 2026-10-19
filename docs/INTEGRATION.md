@@ -69,8 +69,8 @@ friend and session events. On `OSW_RESYNC`, refresh all snapshots it uses.
 Submit operations with `osw_submit`. Metadata and body buffers are copied
 before the call returns. Use `osw_get_result` until completion, process the
 status and buffers, then call `osw_release`. The library owns result buffers;
-never free them or use them after release/destruction. Request timeouts are
-bounded; sessions have no menu-idle or elapsed-time limit.
+never free them or use them after release/destruction. Each request has its own
+timeout.
 
 Before shutdown, stop all concurrent API use and borrowed-buffer reads.
 `osw_stop` joins the worker and aborts pending requests; completed results remain
@@ -114,9 +114,10 @@ capabilities required by the selected endpoint mode. The companion owns its
 application settings and data. A deferred game endpoint requires a companion
 and an explicit acknowledged registration; it is never learned from UDP packets.
 
-See [C API](C_API.md#native-p2p-opt-in-abi-extension-2-2026-10-16) and
+See [C API](C_API.md#p2p-extension-abi-2) and
 [Companion protocol](COMPANION_PROTOCOL.md) before enabling this extension.
-The simulated Lab backend is an explicit test option, never a Steam fallback.
+The [simulated test backend](C_API.md#simulated-test-backend) is an explicit
+test option, never a Steam fallback.
 
 ## Server authentication
 

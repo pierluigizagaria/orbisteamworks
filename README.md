@@ -22,6 +22,10 @@ Unsupported platform operations return explicit errors. Scores, trophies, TUS,
 Matching2 and signaling are not implemented; the entitlement catalog is empty.
 The library does not contact Sony services or parse game packets.
 
+[ctrnf-p2p](https://github.com/pierluigizagaria/ctrnf-p2p) uses orbiSteamworks to
+add Steam multiplayer to the native Crash Team Racing Nitro-Fueled port; players
+looking for that mod should start there.
+
 ## Build
 
 Windows preview binaries, the public header and authentication helper are available in

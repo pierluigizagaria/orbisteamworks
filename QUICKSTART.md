@@ -17,7 +17,7 @@ player can use it; copying the DLL beside an arbitrary game does not add support
 Use [C API](docs/C_API.md) for exact request schemas and ownership rules.
 The [companion protocol](docs/COMPANION_PROTOCOL.md) and
 [authentication helper](docs/OSW1_TOKEN_AND_HELPER.md) are optional integration
-paths; neither requires a particular publisher server.
+paths; neither requires a particular game server.
 
 ## Use an existing integration
 

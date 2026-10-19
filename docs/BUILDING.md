@@ -8,7 +8,7 @@
 - The build tool for your CMake generator, such as Ninja, Make or MSBuild.
 
 The source build does not need Steam, a Steamworks SDK, a game, a host checkout
-or a publisher server. It downloads no dependencies.
+or a game server. It downloads no dependencies.
 
 CMake first uses an existing `nlohmann_json::nlohmann_json` target, then looks for
 an installed package. Otherwise, set `OSW_JSON_INCLUDE_DIR` to the directory
@@ -85,12 +85,12 @@ required by hosts that only consume the library.
 CTest uses repository-owned simulated backends and a fake Steam API library.
 It checks request ownership, failure behavior, platform operations, routing,
 companion lifecycle and the C boundary without a Steam account. Shared builds
-also check dynamic symbol loading. These results do not qualify real Steam
+also check dynamic symbol loading. These results do not test real Steam
 transport, a game session or WAN connectivity.
 
 ## Platform status
 
 Windows x64 is the exercised build and runtime. Linux has loader, transport and
-shared-library code, but live acceptance remains pending. The shared target
+shared-library code, but has not been tested with a live Steam session. The shared target
 explicitly rejects other operating systems; the current POSIX loader depends on
 Linux facilities. macOS support requires additional implementation and testing.
