@@ -94,3 +94,32 @@ Windows x64 is the exercised build and runtime. Linux has loader, transport and
 shared-library code, but has not been tested with a live Steam session. The shared target
 explicitly rejects other operating systems; the current POSIX loader depends on
 Linux facilities. macOS support requires additional implementation and testing.
+
+## Automated Windows builds and releases
+
+GitHub Actions runs the ordinary offline tests on pull requests and pushes to
+`main`. Builds use Windows Server 2022, Python 3.11.9 and CMake 3.31.10 with Visual Studio 2022 x64. Hosted runner images
+can change; manifests record their image version and source commit. This is
+dependency pinning and traceability, not a claim of bit-identical compiler output.
+
+Open **Actions → Build, test and prepare release → Run workflow**, select `main`, and enter
+a version such as `v0.1.0-preview.1`. With `create_draft` selected, successful
+checks create a **draft prerelease** with the ZIP and external SHA-256 checksum.
+An existing release or conflicting tag is never replaced. For a packaging-only
+trial, clear `create_draft` and download the ZIP from the run's Artifacts.
+No new secret or personal token is required; only the draft job has write access.
+
+Inspect and test the downloaded package before publishing the draft. Offline
+fixtures do not establish live Steam or multi-PC game acceptance. Keep user
+configuration, databases, installed profiles and game files out of packages.
+
+Run the same build locally from the repository root with CMake/Go and Python on
+PATH: `python tools/ci_build.py --version v0.1.0-preview.1`.
+Builds use ignored output directories and refuse to overwrite an existing ZIP;
+choose a fresh version or archive the earlier output before rebuilding.
+The existing first preview release is not changed by adding these workflows.
+
+`build-dependencies.json` pins nlohmann/json 3.12.0 by URL and SHA-256. Review
+version/hash changes together. The package includes the matching public header,
+shared library, authentication helper, interface documentation and notices.
+It requires neither sibling repositories nor a Steam SDK.
