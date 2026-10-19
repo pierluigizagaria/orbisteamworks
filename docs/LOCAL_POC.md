@@ -1,5 +1,9 @@
 # Local shadPS4 proof of concept
 
+> Historical private deployment record. Paths and commands below describe that
+> local environment, not prerequisites for this library. For current setup,
+> use [Quickstart](../QUICKSTART.md) and [Integration](INTEGRATION.md).
+
 This is a local, uncommitted PoC for the existing Windows workspace, not a
 release. The user deferred distribution and native-port work. The emulator
 is built at `../shadps4/build/shadps4.exe`; the publisher candidate is at

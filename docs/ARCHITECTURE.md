@@ -1,5 +1,9 @@
 # Architecture
 
+> Historical design record with dated addenda. For current consumer guidance,
+> read [Integration](INTEGRATION.md) and the [C API](C_API.md). Host-specific
+> milestones and superseded constraints below are retained as design history.
+
 Bridge addendum, 2026-10-19: a separate MIT bridge may load the same public C
 API. Optional loopback-v1 binds canonical peer endpoints without host socket
 translation; AppID is configurable before start (default 480). These supersede

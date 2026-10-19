@@ -1,5 +1,10 @@
 # Feasibility: Steam as the PS4 platform provider, in-process
 
+> Historical feasibility study. Current library requirements and integration
+> options are documented in [Building](BUILDING.md) and
+> [Integration](INTEGRATION.md). This record preserves the decisions and limits
+> assessed at each date, including constraints that were later superseded.
+
 Superseding decision (2026-10-19): the independent bridge is now the target
 consumer, using this public C API and an unmodified host. The separate-bridge
 rejection and permanent-480 constraint below are historical: configurable AppID

@@ -1,4 +1,4 @@
-# C API version 1
+# C API reference
 
 The public header is `include/orbisteamworks/osw.h`. The caller initializes each
 structure's `size` and configures ABI version 1. Configuration contains an explicit
@@ -117,17 +117,18 @@ do not disconnect committed game parties. A joining client obtains all large
 immutable payloads before acceptance completes; game membership still waits
 for its own POST. Race UDP is unaffected.
 
-This remains ABI version 1 in an unreleased PoC. Rebuild host and library
-together while the layout is being qualified. Current evidence and remaining
-limits are recorded in INTEGRATION_WORKLOG.md.
+The base interface remains ABI version 1. The explicit ABI 2 P2P configuration
+and additive exports are described below. Use the public header matching the
+selected provider version; current validation records are indexed in
+[Documentation](README.md).
 
 The build uses nlohmann/json, supplied by the host CMake target or installed headers.
 Standalone builds may set `OSW_JSON_INCLUDE_DIR`. No Steamworks SDK headers or
 libraries are required at compile time. `OSW_BUILD_TOOLS` and `OSW_BUILD_TESTS`
 default off when the library is included with `add_subdirectory`.
 `OSW_BUILD_SHARED` (default off) also builds `orbisteamworks.dll` or
-`liborbisteamworks.so`, which exports only the functions above for hosts that
-load the library at runtime; see PLUGIN_DESIGN.md.
+`liborbisteamworks.so`, which exports the public `osw.h` functions for hosts that
+load the library at runtime; see [Integration](INTEGRATION.md#shared-library-loading).
 
 ## Native provider overlay (additive operation, 2026-10-16)
 
@@ -182,12 +183,13 @@ accepts the extension from `osw.h`; set `base.size=sizeof(osw_config_v2)` and
 | `lab_account_id`, `lab_root` | Required only for lab; nonzero synthetic ID and shared private hub directory |
 | `game_bind`, `game_port` | Exact IPv4 loopback address and 1..65535 port of the game's UDP socket |
 | `companion_path` | Optional configured publisher executable; launched hidden with inherited private pipes |
-| `companion_working_dir` | Private per-player/per-economy working directory |
+| `companion_working_dir` | Working directory chosen by the integrating application for its companion |
 | `companion_environment` | JSON string-to-string environment map, <=64 entries and <=8191 bytes |
 
 Configuration strings are UTF-8; obtain Steam identity from `osw_get_identity`,
 not Windows environment variables. Lab callers may provide an explicit UTF-8
-`base.online_id`. Keep normal/unlock-all save roots and child databases separate.
+`base.online_id`. Storage layout, saves and economy policies belong to the host
+and companion; the provider does not choose or partition their databases.
 
 With a companion, `OSW_TOKEN` requires only `client_id` and `scope`. Its osw1
 ticket field is a random 32-byte local process capability, matching the owner

@@ -1,137 +1,80 @@
 # Project instructions
 
-## Superseding bridge task (2026-10-19)
+Use the display name **orbiSteamworks** and repository name `orbisteamworks`.
+Write project documentation in English; respond in the user's language.
 
-The workspace `docs/drafts/codex-ctrnf-p2p-bridge.md` governs B0–B5. Its bridge
-process consumes this public C API; this supersedes in-process-only integration
-and FEASIBILITY revision 3.1's rejection of a separate local server. Existing
-in-process consumers remain supported. Add opt-in `loopback-v1` endpoints while
-preserving legacy and virtual-v1 behavior, with explicit companion capability
-negotiation. AppID is configurable through an additive API, default 480; this
-supersedes the permanent-480 rule. Namespace checks remain mandatory and never
-include economy mode. Keep platform symbols in `src/steam/`, canonical endpoint
-allocation and peer authorization in the provider, and all CTR semantics outside.
-The bridge supplies an ASCII explicit online ID each launch; no live rename is
-promised for an explicit override. Local commits and parallel agents are authorized;
-no publication or SDK distribution. Existing native source/profiles stay intact.
+## Read first
 
-## Superseding P2P task (2026-10-16)
+- [README.md](README.md): purpose, build and runtime limits.
+- [Integration](docs/INTEGRATION.md) and [C API](docs/C_API.md): consumer contract.
+- [Companion protocol](docs/COMPANION_PROTOCOL.md) when changing P2P or children.
+- [Sources](docs/SOURCES.md) when making platform-compatibility claims.
 
-`docs/P2P_DESIGN.md` and the workspace `docs/drafts/codex-p2p-native.md` now
-govern the native P2P work. They supersede native-host deferral, unchanged
-publisher matchmaking and mandatory helper validation for local admission only.
-Central Steam admission retains its existing helper. The user authorized local
-implementation, tests, commits and parallel agents, with no publication. Keep
-the library title-agnostic and Steam symbols confined to `src/steam/`.
+The feasibility, architecture and P2P design records contain dated decisions.
+Current public interfaces and explicit user instructions take precedence over
+superseded host choices, fixed-AppID rules and historical publication restrictions.
 
-Write project documentation in English and respond in the conversation language.
-Use the display name `orbiSteamworks` and repository directory `orbisteamworks`.
+## Architecture and ownership
 
-The library is independently buildable and testable. Public C structures and the
-documented companion pipe are the integration boundary; never add sibling source,
-build-directory or runtime-layout dependencies. Generic identity, authorization
-and opaque peer transport belong here. Guest socket/ABI translation belongs in
-each host; title packet/address formats and economy rules belong in the publisher.
-An emulator or another host must be able to use the same transport API unchanged.
+- The implementation is C++20 with one versioned C-compatible API. Static and
+  shared forms run the same library in their consumer's process. Consumers can
+  be an emulator, native port or independent bridge.
+- Keep Steam symbols and flat-API declarations in `src/steam/`. Core code carries
+  no Steam, guest or host types.
+- Identity, platform sessions, authorization, canonical endpoint allocation and
+  opaque peer transport belong here. Guest ABI/socket translation belongs to
+  the host. Title packets, address formats, matchmaking rules and economy belong
+  to the application or publisher. Do not copy their implementation here.
+- The public C API and optional companion pipe are the integration boundaries.
+  Do not require sibling checkouts, build paths or shared private runtime state.
+- Keep existing ABI layouts and defaults when adding opt-in features. Support
+  legacy, virtual-v1 and loopback-v1 consumers through explicit capabilities;
+  incompatible configurations fail rather than silently falling back.
 
-Read README.md, docs/FEASIBILITY.md, docs/ARCHITECTURE.md and docs/SOURCES.md
-before implementation. FEASIBILITY.md revision 3.1 (2026-10-15) is the current
-decision. It replaces the shadNet-issuer design, the separate local server
-design and Web API ticket validation.
+## Runtime behavior
 
-## Design
+- The client AppID is configurable before start, default 480. Peers must agree
+  on AppID, title, build and realm. Never act on unrelated lobbies. Economy mode
+  is not a platform namespace. The central auth helper currently remains 480.
+- SteamID64 is the account identity; preserve it losslessly. The online ID is
+  derived from the Steam persona unless explicitly provided by the consumer.
+  Keep it valid UTF-8, at most 16 bytes, without controls or surrounding spaces.
+  Host-specific name restrictions stay in the host. An explicit name override
+  does not promise live persona renames.
+- An account change ends the current context; the consumer must create another.
+  Missing Steam dependencies or unsupported operations report explicit failures.
+  Never fabricate identity, tokens or successful operations.
+- One library worker owns Steam calls and callback pumping. Never call host or
+  guest code from the library. Hosts poll copied events on their own threads.
+- Copy requests on entry, retain results until release, and preserve documented
+  cancellation/teardown ownership. Bound individual requests; do not introduce
+  menu-idle or elapsed-time limits for established sessions.
+- Steam lobby membership is not committed game-party membership until the
+  application's membership operation completes.
+- Companion configuration and persistence belong to its caller. Keep the child
+  lifecycle, inherited-pipe authority and endpoint acknowledgements explicit.
 
-- orbiSteamworks is an in-process library with one versioned C API, shared by
-  every host.
-  - Core logic carries no Steam, host or guest types.
-  - Only `src/steam/` touches Steam symbols.
-- Hosts:
-  - the shadPS4 fork selects a Steam provider behind `NpHandler`, with
-    in-process WebAPI and NpAuth paths;
-  - the GetLostIn native port later calls the same C API from `runtime_net.c`.
-  - Do not duplicate platform logic in a host.
-- Keep shadPS4 fork changes inside the NP seam: `NpHandler`, WebAPI transport,
-  NpAuth, settings and build option. Follow shadPS4's own AGENTS.md there.
-  Keep the default build and the shadNet path unchanged.
-- Steam replaces shadNet in this setup. Do not mix shadNet accounts, sessions
-  or invitations with Steam ones.
-- The publisher change is a `steam` admission provider in the Demonware Server.
-  Keep matchmaking, dispatch and room logic unchanged. The project changes that
-  repository only when the user asks.
-- Ticket validation uses the auth helper, which logs on to Steam as an
-  anonymous game server and calls `BeginAuthSession`.
-  - Do not introduce Steam Web API keys: the user rejected that route.
-  - The helper never advertises itself in Spacewar's server browser.
-  - The helper never disconnects players on later Steam events.
+## Dependencies and licensing
 
-## Steamworks and licensing
+- This repository is MIT. Host and publisher code retain their own licenses.
+- Load the user-supplied Steam API library at runtime. Never commit or bundle
+  Steamworks SDK headers, libraries, redistributables or other Valve binaries.
+  Declare only the flat-API subset used; record the SDK revision audited.
+- Preserve required notices for other dependencies. Do not copy source from
+  shadNet, shadPS4, native ports or publishers into this repository.
 
-- Never commit or bundle Steamworks SDK files: headers, libraries, DLLs or
-  redistributables.
-  - Load the Steam API library at runtime.
-  - Declare only the flat-API functions and structures actually used, in
-    `src/steam/`.
-  - A locally downloaded SDK in `out/` may be read to write and check those
-    declarations. Record the SDK version used.
-- The user selected MIT for the library on 2026-10-15. Host glue retains the
-  host's license; never relicense host or publisher code as MIT.
-- Never copy source from shadNet, shadPS4 or GetLostIn into this repository.
-  Host glue lives in the host forks under their license.
-- Missing Steam library or Steam client: report signed out with a reason. Never
-  fabricate identity, tokens or success.
+## Validation and repository hygiene
 
-## AppID 480
-
-AppID 480 is a permanent constraint. Do not describe it as a placeholder or
-plan around another AppID. Its selection proves nothing about:
-- server-side ticket validation;
-- multi-account operation;
-- cold-launch routing.
-
-Every lobby carries and validates the project namespace, title, build and
-realm. Never act on unrelated AppID 480 lobbies.
-
-## Behavior rules
-
-- **Identity.** SteamID64 is the account ID. The online ID is the user's
-  Steam persona name, cleaned to 1–16 bytes of UTF-8 without control
-  characters (user decision 2026-10-15), unless the host configures one. The
-  publisher binds it to the SteamID and follows renames. CTR shows only online
-  IDs. Preserve 64-bit IDs losslessly.
-- **Friends.** List only friends currently in the game for the same title,
-  build and realm, with `presence.onlineStatus`.
-- **No fabricated success.** Unsupported operations return explicit errors.
-- **Membership.** Never report Steam lobby membership as committed game-party
-  membership before the game's own membership request.
-- **Threading.** One library thread pumps Steam callbacks. The library never
-  calls host or guest code. Hosts deliver guest callbacks on their existing
-  guest-visible path. No lock is held while delivering events. Every wait on
-  Steam is bounded.
-- **Async ownership.** Copy request buffers on entry. Completed payloads stay
-  owned until the host releases them. Cancellation and teardown complete
-  pending requests with errors.
-- **No arbitrary disconnects.** Do not introduce menu-idle or elapsed-time
-  session cutoffs. Individual requests stay bounded.
-
-## Evidence and testing
-
-- Classify evidence as F/C/U/H/P/S/I as defined in docs/SOURCES.md. Unknown PS4
-  behavior stays unknown, and replacement choices are marked I.
-- Use owned assets and lawful public references. Do not use leaked SDK
-  documents or contact production Sony or Demonware services. Do not execute
-  untrusted downloaded binaries.
-- Qualify each gate in docs/FEASIBILITY.md separately. Offline fixture results
-  are not live Steam, game or WAN results.
-- Tests exercise observable contracts, ownership and failure behavior, not
-  implementation details.
-
-## Repository hygiene
-
-- Keep builds in `build/`, the downloaded SDK and other local tools in `out/`,
-  and private runtime state (logs, tickets) in `runtime/`.
-- Never commit credentials, tickets, keys, account data, Steamworks SDK files,
-  game or firmware assets, or generated binaries. Never print a full ticket in
-  logs or reports. Refer to SteamIDs in reports pseudonymously.
-- Project creation does not authorize publication, pushing, or replacing
-  running lab components. Keep the game UI human-operated unless explicitly
-  authorized.
+- Build and run ordinary tests independently of any host, publisher or game.
+  Keep integration fixtures optional. Test observable contracts, ownership and
+  failure behavior rather than mirroring implementation details.
+- Report offline, live Steam, game and multi-PC results separately. Do not infer
+  Linux or macOS acceptance from Windows tests or source portability.
+- Use owned assets and lawful public references. No leaked SDK documents,
+  production Sony/Demonware requests or untrusted downloaded executables.
+- Keep builds in `build/`, local tools in `out/`, private state in `runtime/`.
+  Never commit credentials, tickets, private identities, profiles, game assets
+  or generated binaries. Do not print full tickets or sensitive request bodies.
+- Follow the current user's scope for commits, publishing and releases. Do not
+  change installed profiles, launch games or operate game input without explicit
+  authorization. Review staged paths and ignore rules before each commit.

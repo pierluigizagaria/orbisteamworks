@@ -1,200 +1,138 @@
 # orbiSteamworks
 
-orbiSteamworks implements PS4 platform services on top of Steamworks, so a PS4
-game running in an emulator or a native port can use Steam for its online
-identity, friends, sessions and invitations.
+A C-compatible library for implementing PS4 platform services on Steam.
+Written in C++20, orbiSteamworks can be linked into an emulator, native port or
+bridge, or loaded as a shared library through the same public API.
 
-A host or independent bridge loads or links the library and forwards NP calls to it:
-NpManager identity, NpAuth ID tokens and NpWebApi requests. The library answers
-them using the Steam client already running on the player's PC. A private game
-server can then admit players by verified SteamID.
+It provides Steam identity, friends, platform sessions, invitations and optional
+peer transport. Guest ABI translation belongs to the host; title protocols,
+matchmaking rules and progression belong to the application or its server.
+Neither a particular host nor a game server is required to build the library.
 
-The native P2P extension uses ABI 2: each host owns a hidden local publisher,
-discovers rooms through invisible Steam lobbies and sends room messages and
-race datagrams through authenticated Steam Networking Messages. The publisher's
-progression, economy, statistics and files stay local. This is an opt-in mode;
-the original ABI 1 and central ticket-validation path remain available.
-See [P2P_DESIGN.md](docs/P2P_DESIGN.md) and
-[P2P_VALIDATION.md](docs/P2P_VALIDATION.md) for its separate acceptance evidence.
+## Features
 
-```text
-PS4 game ──► host (emulator / native port) ──► orbiSteamworks ──► steam_api64 ──► Steam client
-                 │                                (C API, in-process)          (supplied by the user)
-                 ├─► game publisher server ──► osw-auth-helper ──► Steam (ticket validation)
-                 └─► peer-to-peer game traffic (unchanged)
-```
+- SteamID64 identity and Steam persona names.
+- Friends filtered by title, build and realm.
+- Session and Invitation v1 WebAPI operations backed by Steam lobbies.
+- Asynchronous requests, copied events and explicit result ownership.
+- Optional room discovery, authorized UDP endpoints and opaque peer transport.
+- Optional local companion process or server-side Steam ticket validation.
 
-## What it provides
+Unsupported platform operations return explicit errors. Scores, trophies, TUS,
+Matching2 and signaling are not implemented; the entitlement catalog is empty.
+The library does not contact Sony services or parse game packets.
 
-| PS4 service | Steam implementation |
-| --- | --- |
-| Account ID | SteamID64 |
-| Online ID | The Steam persona name, cleaned to at most 16 bytes of UTF-8 (or a name set by the host) |
-| NpAuth ID token | `osw1` Steam ticket for central admission, or a per-process capability bound to the hidden local publisher |
-| Friend list | Steam friends currently running the same title, build and realm, shown online |
-| Sessions | Friends-only Steam lobbies, with session data, changeable data and images |
-| Invitations | Steam lobby invitations, accepted from the game or from the Steam overlay |
-| Entitlements | An empty list: the library grants no purchases |
+## Build
 
-The WebAPI surface is the Session and Invitation v1 set that NpToolkit2 uses.
-Requests outside it fail with HTTP 501; nothing is forwarded to Sony.
-Scores, TUS, trophies, Matching2 and signaling are not implemented. Game traffic
-uses the host's sockets; ABI 2 can supply per-peer loopback UDP proxies backed
-by Steam transport.
+Windows preview binaries, the public header and optional tools are available in
+[Releases](https://github.com/pierluigizagaria/orbisteamworks/releases).
+Consumers that embed the static library should build from source.
 
-The independent bridge can opt into `loopback-v1`: canonical per-peer sockets
-inside `127.64.0.0/10` carry opaque race traffic without native socket patches.
-For hosts whose UDP bind is known only after launch, explicit deferred endpoint
-registration keeps transport pending until the host supplies its observed socket
-and the companion acknowledges it. There is no packet-based learning or live
-endpoint replacement; see the [public contract](docs/C_API.md#deferred-game-endpoint-registration-additive-2026-10-19).
-Failed or reserved binds fail closed. Windows same-PC Lab supports at most two
-players; Steam multiplayer still requires independent accounts/PCs. See the
-[additive C API](docs/C_API.md#bridge-endpoint-mode-and-appid-additive-exports-2026-10-19).
-
-Any host can opt into the copied canonical endpoint/UDP route API without
-changing ABI 1/2 structures. Identity, routing authorization and opaque transport
-stay in this library; guest socket translation stays in the host, and title
-address formats stay in the publisher. The standalone build and tests require
-no sibling host or publisher checkout. Integration fixtures in other projects
-are optional consumers of the documented interfaces.
-
-## Requirements and limits
-
-- **Steam on every player's PC.** Steam allows one account per client, so each
-  player needs their own PC.
-- **No Steamworks files are distributed.** The library loads the Steam API
-  library at runtime and declares only the flat-API functions it uses. Each
-  user downloads the Steamworks SDK from Valve and places `steam_api64.dll`
-  (or `libsteam_api.so`) next to the host. Without it the provider stays
-  signed out and says why.
-- **Configurable AppID, default 480 (Spacewar).** All players select the same
-  value and must have access to that app through Steam. Friends see that app's
-  name. Cold-launch invitations are unsupported. The library validates protocol,
-  title, build and realm on every lobby; economy mode never changes that namespace.
-
-orbiSteamworks therefore suits private groups and small communities, not a
-public release.
-
-## Hosts and servers
-
-A host needs a small amount of glue that translates its PS4 structures and
-callbacks into the [C API](docs/C_API.md). The game logic stays in the library.
-
-- **shadPS4:** a fork adds a Steam provider behind `NpHandler`, the WebAPI
-  transport and NpAuth. It is not published yet.
-- **GetLostIn native port of CTR Nitro-Fueled:** the current target is the
-  unmodified pinned online host, supervised by the independent `ctrnf-p2p`
-  bridge through this public C API. Existing in-process integrations remain
-  supported. Game acceptance is tracked separately from fixture tests.
-- **Game servers:** a server verifies `osw1` tokens by running the
-  `osw-auth-helper` included here, which logs on to Steam as an anonymous game
-  server. The token format and the helper's protocol are specified in
-  [OSW1_TOKEN_AND_HELPER.md](docs/OSW1_TOKEN_AND_HELPER.md). A `steam`
-  admission provider for the
-  [Demonware server](https://github.com/pierluigizagaria/demonware-server)
-  exists locally and is not published yet.
-
-See [QUICKSTART.md](QUICKSTART.md) for player and operator setup.
-
-## Status
-
-The library is a working proof of concept, not a release. It has been
-exercised with CTR Nitro-Fueled (CUSA13795 1.21) in the shadPS4 fork on Windows,
-with one Steam account. Steam sign-in, the Steam name in game, publisher
-admission, party creation and matchmaking search work. Friends, invitations,
-a shared party and a race between two Steam accounts are not verified yet,
-nor is Linux. The [feasibility document](docs/FEASIBILITY.md#acceptance-gates)
-lists the acceptance gates.
-
-The bridge candidate additionally passes 48 Windows static/shared contract
-tests, including loopback/virtual isolation, configured AppID, a two-process
-simulated backend and hidden-child ownership.
-These results do not establish a Steam peer race or WAN/SDR acceptance.
-
-## Building
-
-Requirements: CMake 3.20+, a 64-bit C++20 compiler (MSVC, Clang or GCC) and
-the nlohmann/json headers. No Steamworks SDK is needed to compile.
+Requires CMake 3.20+, a 64-bit C++20 compiler and nlohmann/json 3.11+.
+No Steamworks SDK is needed at compile time.
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOSW_JSON_INCLUDE_DIR=<path>
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-The offline test suites use a simulated Steam library and need no Steam
-client. A standalone build also produces the authentication tools and
-`osw-auth-helper`.
+CMake can find an installed nlohmann/json package, use an existing
+`nlohmann_json::nlohmann_json` target, or accept
+`-DOSW_JSON_INCLUDE_DIR=/path/to/include` containing `nlohmann/json.hpp`.
 
-| Option | Default | Effect |
-| --- | --- | --- |
-| `OSW_BUILD_TESTS` | on when standalone | Contract tests |
-| `OSW_BUILD_TOOLS` | on when standalone | `osw-auth-helper` and test tools |
-| `OSW_BUILD_SHARED` | off | Runtime-loadable `orbisteamworks` library ([design](docs/PLUGIN_DESIGN.md)) |
+The default library is static. Add `-DOSW_BUILD_SHARED=ON` to also build
+`orbisteamworks.dll` on Windows or `liborbisteamworks.so` on Linux.
+See [Building](docs/BUILDING.md) for targets, options and platform limits.
 
-A host normally adds this repository with `add_subdirectory`, links the
-`orbisteamworks` target and includes `orbisteamworks/osw.h`. Tools and tests
-then default to off.
+## Use from C or C++
 
-## Using the C API
+Include [`orbisteamworks/osw.h`](include/orbisteamworks/osw.h). For a source
+integration, add this repository to your project and link its CMake target:
 
-The API is versioned, message-based and C-compatible. Requests are copied on
-entry, results stay owned by the library until released, and events are
-polled by the host on its own thread. The library never calls back into the
-host.
+```cmake
+add_subdirectory(external/orbisteamworks)
+target_link_libraries(my_host PRIVATE orbisteamworks)
+```
+
+This example supplies application startup and shutdown hooks:
 
 ```c
-osw_config config = {sizeof(config), OSW_ABI_VERSION};
-strcpy(config.title, "5760");      /* project namespace values agreed by all players */
-strcpy(config.build, "1.21");
-strcpy(config.realm, "my-server");
-/* config.online_id left empty: derived from the Steam persona */
+#include <orbisteamworks/osw.h>
+#include <string.h>
 
-osw_context *context;
-osw_create(&config, &context);
-osw_start(context);
+int32_t platform_open(osw_context **context)
+{
+    osw_config config = {0};
+    int32_t status;
 
-osw_identity identity = {sizeof(identity)};
-osw_get_identity(context, &identity);  /* signed_in, account_id, online_id, reason */
+    if (context == NULL)
+        return OSW_INVALID_ARGUMENT;
+    *context = NULL;
+    config.size = sizeof(config);
+    config.abi_version = OSW_ABI_VERSION;
+    memcpy(config.title, "my-title", sizeof("my-title"));
+    memcpy(config.build, "1", sizeof("1"));
+    memcpy(config.realm, "default", sizeof("default"));
+    /* Empty online_id: derive it from the Steam persona.
+       Empty library_path: look beside the host executable. */
+
+    status = osw_create(&config, context);
+    if (status != OSW_OK)
+        return status;
+    status = osw_start(*context);
+    if (status != OSW_OK) {
+        osw_destroy(*context);
+        *context = NULL;
+    }
+    return status;
+}
+
+void platform_close(osw_context **context)
+{
+    if (context != NULL) {
+        osw_destroy(*context); /* Stops and joins the worker before freeing it. */
+        *context = NULL;
+    }
+}
 ```
 
-WebAPI requests, ID tokens, friend snapshots and invitations go through
-`osw_submit` / `osw_get_result` / `osw_release`; Steam changes arrive through
-`osw_poll_event`. See [C_API.md](docs/C_API.md).
+`osw_start` starts asynchronous initialization; it does not confirm Steam
+sign-in. In your event loop, call `osw_poll_event` and read `osw_get_identity`
+after `OSW_IDENTITY_CHANGED`. Initialize every output structure's `size`.
+Stop all other API use before calling `platform_close`.
 
-## Repository layout
+[Integration](docs/INTEGRATION.md) covers the event loop, shared-library loading,
+AppID selection and optional P2P. [C API](docs/C_API.md) defines operation schemas,
+lifetimes and errors.
 
-| Path | Contents |
-| --- | --- |
-| `include/orbisteamworks/osw.h` | Public C API |
-| `src/core/` | Platform logic: identity, sessions, invitations, WebAPI routes; no Steam types |
-| `src/steam/` | Runtime Steam loader and the flat-API subset; the only code that touches Steam |
-| `server/auth-helper/` | Server-side ticket validator |
-| `tests/` | Offline contract tests |
-| `tools/` | Authentication spike and live platform check |
-| `docs/` | Design, API, protocol and validation records |
+## Runtime requirements
+
+Supply Valve's Steam API library separately and run Steam signed in.
+An explicit `osw_config.library_path` selects the library; otherwise it is
+loaded beside the host executable. Missing dependencies report a signed-out
+identity with a reason.
+
+The client AppID defaults to **480** and can be set before startup with
+`osw_set_app_id`. Peers must agree on AppID, title, build and realm.
+The separate central authentication helper currently supports AppID 480 only.
+Cold-launch invitations are unsupported.
+
+Windows x64 is the exercised runtime. Linux code is present but live runtime
+validation is pending; macOS is not currently supported.
+Offline tests verify library contracts, not game compatibility or a successful
+multiplayer session.
 
 ## Documentation
 
-- Setup: [QUICKSTART.md](QUICKSTART.md)
-- Interfaces: [C API](docs/C_API.md), [osw1 token and auth helper](docs/OSW1_TOKEN_AND_HELPER.md),
-  [runtime-loadable library](docs/PLUGIN_DESIGN.md)
-- Design: [architecture](docs/ARCHITECTURE.md), [feasibility and gates](docs/FEASIBILITY.md)
-- Validation records: [contract inventory](docs/GATE0_CONTRACT_INVENTORY.md),
-  [ticket validation](docs/GATE1_AUTH_SPIKE.md),
-  [CTR validation case](docs/CTR_VALIDATION_CASE.md),
-  [integration log](docs/INTEGRATION_WORKLOG.md), [local test setup](docs/LOCAL_POC.md),
-  [sources](docs/SOURCES.md)
-- Contributing: [AGENTS.md](AGENTS.md)
+- [Quickstart](QUICKSTART.md)
+- [Build options](docs/BUILDING.md) and [host integration](docs/INTEGRATION.md)
+- [C API](docs/C_API.md), [companion protocol](docs/COMPANION_PROTOCOL.md) and
+  [token / authentication helper protocol](docs/OSW1_TOKEN_AND_HELPER.md)
+- [Documentation index](docs/README.md), including design and validation history
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-MIT; see [LICENSE](LICENSE). The repository contains no Steamworks SDK files,
-no source from host projects, and no firmware or game assets. Host glue stays
-in the host's repository under the host's license.
-
-A GPL host that loads a user-supplied proprietary library leaves the
-combination on the user's machine. Some interpretations, including the FSF's,
-still treat such a program as one work. This is an engineering note, not legal
-advice.
+[MIT](LICENSE). Steamworks files, game assets and host implementations are not
+included. Dependencies and consuming projects retain their own licenses.

@@ -1,5 +1,11 @@
 # Native P2P design
 
+> Historical implementation plan with dated addenda. Use the
+> [C API](C_API.md), [Companion protocol](COMPANION_PROTOCOL.md) and
+> [Integration guide](INTEGRATION.md) for current reusable interfaces. Original
+> CTR deployment, storage and publication decisions below are historical scope,
+> not requirements imposed on another consumer of this library.
+
 ## Bridge addendum, 2026-10-19 (I)
 
 The authorized workspace `docs/drafts/codex-ctrnf-p2p-bridge.md` supersedes the

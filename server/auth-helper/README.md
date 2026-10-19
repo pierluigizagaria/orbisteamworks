@@ -7,7 +7,7 @@ Built as `osw-auth-helper` by the normal CMake build. It runs on the publisher
 machine, loads the operator-supplied Steam API library and logs on anonymously
 for AppID 480. It opens no HTTP listener and does not advertise a game server.
 
-Demonware starts it with redirected stdin/stdout. Only the parent process owns
+A publisher starts it with redirected stdin/stdout. Only the parent process owns
 these pipes; they are not a network authentication endpoint. EOF ends all
 outstanding sessions, logs off and shuts down. Steam diagnostics go to stderr,
 which the publisher discards to avoid forwarding account-specific output.
@@ -38,13 +38,14 @@ initialization errors are nonzero process exits. The parent fails admission on
 unexpected output, pipe loss, timeout or process exit. It does not disconnect
 already-admitted publisher players when the helper fails.
 
-The helper does not own publisher persistence or name bindings. Demonware
-atomically persists canonical ticket hashes and the verified identity/name
-binding in its Steam instance database. A new admission requires a new ticket.
+The helper does not own publisher persistence or name bindings. The integrating
+publisher owns ticket replay prevention and verified identity/name bindings;
+the [protocol specification](../../docs/OSW1_TOKEN_AND_HELPER.md) defines the
+verifier's responsibilities. A new admission requires a new ticket.
 There is no claimed 120-second native Steam ticket lifetime. The publisher's
 120-second ticket handoff deadline ends only *unclaimed* native leases;
 claimed leases end when their owning lobby connection closes.
 
-The helper and the spike currently reuse the shared token codec under
-`tools/auth-spike/common.*`; extraction into the library core is part of the
-remaining C API integration. No source from other host projects is copied here.
+The helper and diagnostic tools share the token codec in
+`src/core/credential.cpp`. No host or publisher implementation is required to
+build the helper.
