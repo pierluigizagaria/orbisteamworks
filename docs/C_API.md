@@ -336,3 +336,54 @@ An explicit online ID does not alter the raw persona. A launcher may bootstrap
 without a companion, read the raw persona, destroy that context, then create a
 fresh context with its own explicit online ID policy. Only one production
 context may exist at once; the override is fixed for that context.
+
+## Deferred game endpoint registration (additive, 2026-10-19)
+
+A launcher that cannot know its child's bound UDP port before launch calls
+`osw_defer_game_endpoint(context)` after `osw_enable_loopback_endpoints` and
+before `osw_start`. This requires a configured companion and loopback mode;
+otherwise it returns `OSW_NOT_SUPPORTED`. Calls after start/stop return
+`OSW_INVALID_ARGUMENT`. ABI 1/2 layouts and the other endpoint modes are unchanged.
+This is an explicit opt-in contract (I), not first-packet learning.
+
+The original config's physical endpoint satisfies creation validation but is
+never used for transport in deferred mode. The owner descriptor contains no
+physical endpoint. The companion must acknowledge `game.endpoint.v1` as well
+as `loopback.endpoints.v1`. P2P `status.ready` means the companion is ready to
+serve identity/publisher requests; `status.game_endpoint_pending` remains true.
+`osw_get_local_endpoint` and route lookups remain `OSW_PENDING`.
+
+After observing its own child's actual UDP socket, the host submits:
+
+```json
+{"op":"game.endpoint.bind","address":"127.0.0.1","port":3104}
+```
+
+This is `OSW_P2P`, with exactly those three metadata fields and an empty body.
+Only a local C API request may bind; a companion request cannot. Address is a
+canonical IPv4 loopback literal outside `127.64.0.0/10`, and port is an integer
+1..65535. The host is responsible for establishing socket/process ownership;
+the library accepts no PID, inspects no host process and parses no game packet.
+At most one binding may be in flight and one may complete per context.
+
+The request completes `OSW_OK` only after the child has applied the exact source
+and returned a correlated acknowledgement. Result metadata is `{address,port}`.
+The source filter and incoming delivery destination then change together on
+the provider worker. `game_endpoint_pending` becomes false. Canonical endpoints,
+transport protocol, identity, AppID and namespace never change. Further binding
+requests fail, even for the same endpoint; there is no hot rebind or restart.
+
+While pending, room, peer and advertisement operations fail with
+`game_endpoint_pending`, automatic room following is disabled, no peer transport
+is authorized, and incoming carrier messages are discarded. Identity, token,
+friend/name reads and WebAPI GETs remain available. WebAPI mutations, invitation
+actions and other platform actions return `OSW_UNAVAILABLE` until registration.
+The deferred companion must withhold discovery replies before binding and
+must answer only the exact registered physical source afterwards.
+
+Acknowledgement has a five-second maximum, additionally bounded by the caller's
+request deadline. Missing, late, mismatched or duplicate acknowledgements break
+the context. Cancellation after dispatch also breaks it: the child may already
+have committed, so rollback would invent agreement. No route/source fallback is
+allowed. A host that loses or changes the bound socket must close its supervised
+session rather than silently change an established endpoint.

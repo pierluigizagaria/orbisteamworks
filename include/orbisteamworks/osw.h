@@ -125,6 +125,10 @@ int32_t osw_enable_virtual_endpoints(osw_context *context);
 /* Mutually exclusive with virtual mode; fixed canonical loopback sockets need
  * no host translation. Both mode selections are immutable before/after start. */
 int32_t osw_enable_loopback_endpoints(osw_context *context);
+/* Pre-start, after loopback selection, with a companion. Keep game transport
+ * pending until the local OSW_P2P game.endpoint.bind request is acknowledged.
+ * The host supplies an observed endpoint; the provider never learns from UDP. */
+int32_t osw_defer_game_endpoint(osw_context *context);
 /* Pre-start only, nonzero AppID. Default 480; central auth helper stays 480. */
 int32_t osw_set_app_id(osw_context *context, uint32_t app_id);
 /* Raw provider persona, copied from the worker snapshot. required includes NUL.

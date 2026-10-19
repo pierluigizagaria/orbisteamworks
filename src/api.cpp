@@ -240,6 +240,18 @@ int32_t osw_enable_loopback_endpoints(osw_context *context) {
         return OSW_OK;
     } catch (...) { return OSW_UNAVAILABLE; }
 }
+int32_t osw_defer_game_endpoint(osw_context *context) {
+    if (!context) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lifecycle(context->lifecycle);
+        std::lock_guard lock(context->mutex);
+        if (context->started || context->stopping) return OSW_INVALID_ARGUMENT;
+        if (!context->config.loopback_endpoints || context->config.companion_path.empty())
+            return OSW_NOT_SUPPORTED;
+        context->config.defer_game_endpoint = true;
+        return OSW_OK;
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
 int32_t osw_set_app_id(osw_context *context, uint32_t app_id) {
     if (!context || !app_id) return OSW_INVALID_ARGUMENT;
     try {

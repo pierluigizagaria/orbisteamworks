@@ -861,3 +861,43 @@ Final locally built artifacts (SHA-256):
 Optional actual-DLL/two-publisher and owned-game identity-gate records belong to
 the publisher integration report and workspace bridge work log. Those remain
 separate from this component's independently buildable ordinary test suite.
+
+## Deferred game source registration, 2026-10-19
+
+Bridge B3 observed that an unchanged host can bind a different physical UDP
+port on each launch when another local instance occupies its preferred port.
+That host observation motivates an explicit reusable registration contract (I);
+the provider contains no PID lookup, native bind policy or title packet parser.
+`osw_defer_game_endpoint` and the public `game.endpoint.bind` request preserve
+the canonical endpoint and transport version while registering the actual
+physical source once, through a companion acknowledgement.
+
+The final Windows MSVC Release static/shared build passes **49/49 tests** in
+50.88 seconds (`out/deferred-full-tests.log`); build evidence is
+`out/deferred-build-final.log`. `deferred-endpoint-lab` adds standalone coverage:
+
+- Pending descriptors omit the physical endpoint; capability acknowledgement
+  is mandatory, local route getters stay pending, and room/advertisement/peer
+  operations and WebAPI mutations stay blocked while friend/read APIs work.
+- Invalid, wildcard, non-loopback and reserved-range endpoints are rejected;
+  the child cannot initiate its own binding. One exact host binding is allowed.
+- Both directions of opaque UDP use the registered source/destination and
+  preserve canonical sender identity; an unregistered source is rejected.
+- Missing capability, incorrect/duplicate acknowledgement and acknowledgement
+  timeout fail closed. Binding cannot be changed or repeated.
+- Cancellation is terminal both while the acknowledgement is in flight and
+  after the worker consumes it but before the C API accepts completion. The
+  latter has a deterministic core regression for the deadline/cancel race.
+- Existing legacy, virtual-v1, static loopback, shared C loading, identity,
+  invitation/party and endpoint revocation tests continue to pass.
+
+These are synthetic contract tests, not original-game or Steam transport
+acceptance. The ordinary suite needs no publisher or host checkout. The optional
+actual-DLL publisher fixture is recorded separately by its owning component.
+
+Final artifacts (SHA-256):
+
+| Artifact | Hash |
+| --- | --- |
+| `build/loopback-candidate/orbisteamworks.dll` | `ba5b969044b29c7430b03b7e82c98d0015dc48c34371fd3ba2c365697348131d` |
+| `build/loopback-candidate/orbisteamworks.lib` | `c781dbc467a5449982570e2f21715e66e7eda634c8a490001e4e5f11cb3c0cf8` |

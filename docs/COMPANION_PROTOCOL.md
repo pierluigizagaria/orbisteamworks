@@ -22,9 +22,9 @@ include `CTR_COMPANION=stdio`, `CTR_ADMISSION=local` and
 
 Parent first sends `{v:1,event:"owner",steam_id,online_id,token,title,build,realm,
 backend:"steam"|"lab",app_id:480}`. The child must receive this within ten seconds.
-The optional positive uint32 `app_id` defaults to 480 when absent; current
-providers emit it explicitly. It belongs to platform identity/namespace, never
-economy. Older consumers may ignore this additive field.
+The positive uint32 `app_id` is required for loopback mode; current providers
+emit it explicitly. For legacy/virtual consumers, omission retains the historical
+480 default. It belongs to platform identity/namespace, never economy.
 `token` is an `osw1` envelope with a random 32-byte per-process capability in
 the ticket field. This is local admission only: exact token plus parsed owner
 ID must match. It is never a Steam ticket and never goes to an auth helper or
@@ -61,6 +61,37 @@ canonical endpoint itself, so hosts use no translation calls. The publisher
 still owns all title-specific document validation and preserves peer identity.
 Bind/collision errors never allocate fallback endpoints. See [C_API.md](C_API.md)
 for derivation, revocation, AppID isolation and Windows source evidence.
+
+### Deferred physical game source
+
+An explicitly deferred loopback owner instead has exactly this transport shape:
+`{mode:"loopback-v1",address:"127.64.x.y",port:12345,game_pending:true}`.
+`game_address` and `game_port` are absent. A pending descriptor never authorizes
+the original configured source. The child must additionally acknowledge
+`game.endpoint.v1`; absence fails startup without falling back to a static source.
+This does not change the canonical endpoint or loopback peer protocol version.
+
+Only a local host C API request can initiate registration. The parent sends
+`{v:1,event:"game.endpoint",id,address,port}`. These are exactly the five fields;
+`id` is an opaque nonempty correlation of at most 64 bytes. The child validates
+the literal loopback source outside `127.64.0.0/10` and integer port 1..65535,
+applies it once, then sends exactly
+`{v:1,event:"game.endpoint.bound",id,address,port}` with identical values.
+The inherited pipe is the sole authority; never infer ownership from UDP.
+
+The child must not answer discovery before registration, and must answer only
+the exact registered source afterwards. The provider keeps room, peer,
+advertisement and opaque carrier operations gated until the acknowledgement;
+identity and read-only platform requests remain available. No room or proxy is
+created while pending. A child may apply its local mapping before its ack reaches
+the parent, but it cannot establish peer routes during that interval.
+
+Duplicate/unsolicited/mismatched acknowledgements, invalid registration frames,
+pipe loss, or an acknowledgement timeout break the context. The parent bounds
+the transaction to five seconds and the local request deadline. Cancellation
+after dispatch is terminal because the child's commit may already have happened.
+Registration cannot be replaced or repeated during the context lifetime.
+P2P `status` adds `game_endpoint_pending`; `ready` still means companion ready.
 
 A child supporting live owner-name changes advertises
 `{v:1,event:"ready",capabilities:["owner.name.v1"]}`. Capabilities contain at

@@ -19,6 +19,16 @@ passes an ASCII explicit persona each launch. Steamworks stays user supplied.
 Overlay injection, native invitation delivery, host PRs and publication are outside
 this task. Fixture, game and two-PC gates remain separate.
 
+For a host whose physical UDP bind is only known after launch, the bridge may
+explicitly defer game-source registration. The provider starts identity and its
+companion with no physical source, keeps transport operations pending, and
+accepts one observed source through the local public C API. A versioned companion
+acknowledgement commits that source for exact UDP filtering and delivery. The
+canonical endpoint, identity and namespace remain immutable. No packet learning,
+source wildcard, live rebind or session restart is introduced. Child socket/PID
+observation belongs to the bridge's OS adapter; discovery semantics remain in
+the publisher. See [C_API.md](C_API.md#deferred-game-endpoint-registration-additive-2026-10-19).
+
 Decision date: 2026-10-16. Status: authorized implementation, acceptance pending.
 This is an explicit replacement design (I), not a recovered Sony contract.
 

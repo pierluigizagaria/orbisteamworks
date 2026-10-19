@@ -7,6 +7,7 @@
 #include <deque>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <set>
 
 namespace osw::core {
@@ -29,6 +30,19 @@ bool safe_metadata(const Json &j) {
     return true;
 }
 std::string scalar(const Json &j) { return j.is_string() ? j.get<std::string>() : j.dump(); }
+bool game_endpoint(const Json &value, Endpoint &endpoint) {
+    if (!value.contains("address") || !value["address"].is_string() ||
+        !value.contains("port") || !value["port"].is_number_integer()) return false;
+    const auto &address = value["address"].get_ref<const std::string &>();
+    const auto port = value["port"].get<std::int64_t>();
+    if (address.empty() || address.size() >= 16 || address.find('\0') != std::string::npos ||
+        port < 1 || port > 65535) return false;
+    osw_endpoint raw{sizeof(raw)};
+    std::copy(address.begin(), address.end(), raw.address);
+    raw.port = static_cast<std::uint32_t>(port);
+    return read_endpoint(raw, endpoint) && endpoint.address[0] == 127 &&
+           !(endpoint.address[1] >= 64 && endpoint.address[1] < 128);
+}
 } // namespace
 struct P2P::Impl {
     Config config;
@@ -37,6 +51,16 @@ struct P2P::Impl {
     Child child;
     std::string token;
     bool ready = false, broken = false, owner_name_updates = false;
+    bool game_pending = false, game_binding_supported = false;
+    struct GameBinding {
+        std::uint64_t request;
+        Json command;
+        Endpoint endpoint;
+        std::string correlation;
+        Clock::time_point deadline;
+    };
+    std::optional<GameBinding> game_binding;
+    std::uint64_t game_binding_request = 0;
     std::uint64_t proxy_received = 0, network_sent = 0, network_received = 0, proxy_sent = 0,
                   proxy_rejected = 0;
     Clock::time_point start = Clock::now();
@@ -84,6 +108,7 @@ struct P2P::Impl {
     std::deque<Json> events;
     Update update;
     Impl(const Config &c, const Identity &i, Social &s) : config(c), identity(i), social(s) {
+        game_pending = config.defer_game_endpoint;
         token = encode_token({identity.account_id, random_secret(), identity.online_id});
         if (config.canonical_endpoints()) {
             if (!config.endpoints) config.endpoints = std::make_shared<EndpointRoutes>();
@@ -105,8 +130,12 @@ struct P2P::Impl {
             if (config.canonical_endpoints()) {
                 const auto endpoint = virtual_endpoint(identity.account_id, config);
                 owner["transport"] = {{"mode", config.loopback_endpoints ? "loopback-v1" : "virtual-v1"},
-                    {"address", endpoint_address(endpoint)}, {"port", endpoint.port},
-                    {"game_address", config.game_bind}, {"game_port", config.game_port}};
+                    {"address", endpoint_address(endpoint)}, {"port", endpoint.port}};
+                if (game_pending) owner["transport"]["game_pending"] = true;
+                else {
+                    owner["transport"]["game_address"] = config.game_bind;
+                    owner["transport"]["game_port"] = config.game_port;
+                }
             }
             if (!child.send(owner.dump()))
                 throw std::runtime_error("companion handshake");
@@ -175,6 +204,7 @@ struct P2P::Impl {
         return proxy.friend_scope || !proxy.advertisement_grants.empty();
     }
     bool prepare_proxy(std::uint64_t peer, Proxy &proxy) {
+        if (game_pending || broken) return false;
         if (config.loopback_endpoints) {
             const auto canonical = virtual_endpoint(peer, config);
             // Check collisions before binding, but publish no route until the
@@ -373,7 +403,7 @@ struct P2P::Impl {
                     ++it;
         }
     }
-    void execute(Json command, std::uint64_t request) {
+    void execute(Json command, std::uint64_t request, std::uint32_t timeout = 25000) {
         try {
             if (!command.is_object() || !command.contains("op") || !command["op"].is_string()) {
                 reply(command, request, false, {}, "invalid_request");
@@ -382,7 +412,8 @@ struct P2P::Impl {
             auto op = command["op"].get<std::string>();
             if (op == "status") {
                 reply(command, request, true,
-                      {{"ready", ready},
+                      {{"ready", ready && !broken},
+                       {"game_endpoint_pending", game_pending},
                        {"owner_name_updates", config.companion_path.empty() || owner_name_updates},
                        {"backend", config.backend ? "lab" : "steam"},
                        {"proxy_received", proxy_received},
@@ -392,6 +423,29 @@ struct P2P::Impl {
                        {"proxy_rejected", proxy_rejected}});
                 return;
             }
+            if (broken) {
+                reply(command, request, false, {}, "transport_unavailable");
+                return;
+            }
+            if (op == "game.endpoint.bind") {
+                Endpoint endpoint;
+                if (!request || !config.defer_game_endpoint || !game_pending || game_binding ||
+                    !ready || !game_binding_supported || broken || !rooms.empty() ||
+                    !proxies.empty() || !advertisements.empty() || !pending.empty() ||
+                    !validating.empty() || !awaiting_party.empty() || !ad_pending.empty() ||
+                    command.size() != 3 || !game_endpoint(command, endpoint)) {
+                    reply(command, request, false, {}, "invalid_game_endpoint_binding");
+                    return;
+                }
+                const auto correlation = "game-" + idstr(request);
+                game_binding = GameBinding{request, command, endpoint, correlation,
+                    Clock::now() + std::chrono::milliseconds(std::min(timeout, 5000u))};
+                game_binding_request = request;
+                if (!child.send(Json{{"v", 1}, {"event", "game.endpoint"}, {"id", correlation},
+                                     {"address", endpoint_address(endpoint)}, {"port", endpoint.port}}.dump()))
+                    broken = true;
+                return;
+            }
             if (op == "events.poll" && request) {
                 Json out = Json::array();
                 while (!events.empty() && out.size() < 32) {
@@ -399,6 +453,10 @@ struct P2P::Impl {
                     events.pop_front();
                 }
                 reply(command, request, true, {{"events", out}});
+                return;
+            }
+            if (game_pending && op != "name.resolve" && op != "name.lookup") {
+                reply(command, request, false, {}, "game_endpoint_pending");
                 return;
             }
             if (op == "advertisement.set" || op == "advertisement.get") {
@@ -663,6 +721,10 @@ struct P2P::Impl {
                     friends.insert(f.id);
         }
         allowed.insert(friends.begin(), friends.end());
+        if (game_pending) {
+            social.allow_peers({});
+            return;
+        }
         for (auto it = rooms.begin(); it != rooms.end();) {
             auto room = *it;
             if (!member(room, identity.account_id)) {
@@ -707,6 +769,10 @@ struct P2P::Impl {
                 return event.kind == SocialEvent::friends_changed;
             }))
             friend_refresh = {};
+        if (game_pending) {
+            refresh_rooms();
+            return;
+        }
         for (auto &event : input) {
             if (event.call && abandoned.erase(event.call)) {
                 if (event.success &&
@@ -842,6 +908,12 @@ struct P2P::Impl {
                     }
                     owner_name_updates = std::find(capabilities.begin(), capabilities.end(),
                                                    Json("owner.name.v1")) != capabilities.end();
+                    game_binding_supported = std::find(capabilities.begin(), capabilities.end(),
+                                                       Json("game.endpoint.v1")) != capabilities.end();
+                    if (game_pending && !game_binding_supported) {
+                        broken = true;
+                        break;
+                    }
                     if (config.canonical_endpoints() &&
                         std::find(capabilities.begin(), capabilities.end(),
                                   Json(config.loopback_endpoints ? "loopback.endpoints.v1" : "virtual.endpoints.v1")) == capabilities.end()) {
@@ -849,7 +921,26 @@ struct P2P::Impl {
                         break;
                     }
                     ready = true;
-                    if (config.canonical_endpoints()) config.endpoints->set_ready();
+                    if (config.canonical_endpoints() && !game_pending) config.endpoints->set_ready();
+                    continue;
+                }
+                if (command.value("event", std::string{}) == "game.endpoint.bound") {
+                    Endpoint endpoint;
+                    if (!game_pending || !game_binding || command.size() != 5 ||
+                        !command.contains("id") || command["id"] != game_binding->correlation ||
+                        !game_endpoint(command, endpoint) || endpoint != game_binding->endpoint ||
+                        Clock::now() >= game_binding->deadline) {
+                        broken = true;
+                        break;
+                    }
+                    config.game_bind = endpoint_address(endpoint);
+                    config.game_port = endpoint.port;
+                    social.take_peer_messages();
+                    game_pending = false;
+                    config.endpoints->set_ready();
+                    reply(game_binding->command, game_binding->request, true,
+                          {{"address", config.game_bind}, {"port", config.game_port}});
+                    game_binding.reset();
                     continue;
                 }
                 if (!command.contains("id") || !command["id"].is_string() ||
@@ -863,6 +954,15 @@ struct P2P::Impl {
             }
             if (!child.alive() || (!ready && Clock::now() - start > std::chrono::seconds(15)))
                 broken = true;
+        }
+        if (game_binding && Clock::now() >= game_binding->deadline) {
+            reply(game_binding->command, game_binding->request, false, {}, "game_endpoint_ack_timeout");
+            game_binding.reset();
+            broken = true; // The child may have applied it: never guess or roll back.
+        }
+        if (broken || game_pending) {
+            social.take_peer_messages(); // No stale UDP/advertisement is replayed after binding.
+            return;
         }
         for (auto it = pending.begin(); it != pending.end();) {
             if (Clock::now() >= it->second.deadline) {
@@ -994,11 +1094,22 @@ struct P2P::Impl {
 P2P::P2P(const Config &c, const Identity &i, Social &s) : p(std::make_unique<Impl>(c, i, s)) {}
 P2P::~P2P() = default;
 bool P2P::handles(const Request &request) const {
+    if (p->game_pending && request.operation != OSW_P2P && request.operation != OSW_TOKEN &&
+        request.operation != OSW_FRIENDS && request.operation != OSW_RESOLVE_NAME) {
+        if (request.operation != OSW_WEBAPI) return true;
+        const auto metadata = Json::parse(request.metadata, nullptr, false);
+        if (!metadata.is_object() || !metadata.contains("method") || metadata["method"] != "GET")
+            return true;
+    }
     return request.operation == OSW_P2P ||
            (request.operation == OSW_TOKEN &&
             (!p->config.companion_path.empty() || p->config.backend == 1));
 }
 void P2P::submit(Request request) {
+    if (request.operation != OSW_P2P && request.operation != OSW_TOKEN) {
+        p->update.results.push_back({request.id, OSW_UNAVAILABLE});
+        return;
+    }
     if (request.operation == OSW_TOKEN) {
         auto j = Json::parse(request.metadata, nullptr, false);
         if (!j.is_object() || !j.contains("client_id") || !j["client_id"].is_string() ||
@@ -1015,9 +1126,14 @@ void P2P::submit(Request request) {
         p->update.results.push_back(std::move(result));
     } else {
         auto command = Json::parse(request.metadata, nullptr, false);
+        if (command.is_object() && command.contains("op") && command["op"] == "game.endpoint.bind" &&
+            (!request.body.empty() || command.size() != 3)) {
+            p->update.results.push_back({request.id, OSW_INVALID_ARGUMENT});
+            return;
+        }
         if (command.is_object())
             command.erase("_autojoin");
-        p->execute(std::move(command), request.id);
+        p->execute(std::move(command), request.id, request.timeout_ms);
     }
 }
 void P2P::process(const std::vector<SocialEvent> &events) { p->process(events); }
@@ -1045,6 +1161,12 @@ bool P2P::update_name(const std::string &name) {
     return true;
 }
 void P2P::cancel(std::uint64_t request) {
+    if (request && p->game_binding_request == request) {
+        p->game_binding.reset();
+        // The worker may have consumed the ack just before the C API applies a
+        // concurrent cancel/deadline. Remember the sole request after the ack.
+        p->broken = true;
+    }
     for (auto it = p->pending.begin(); it != p->pending.end();)
         if (it->second.request == request) {
             p->abandoned[it->first] = idfield(it->second.command, "room_id");

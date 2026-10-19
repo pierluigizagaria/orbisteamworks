@@ -211,13 +211,16 @@ void endpoint_c_api() {
                 osw_get_local_endpoint(context, &out) == OSW_PENDING, "enable before startup");
     require(osw_enable_loopback_endpoints(context) == OSW_INVALID_ARGUMENT,
             "selected virtual mode is immutable before start");
+    require(osw_defer_game_endpoint(context) == OSW_NOT_SUPPORTED,
+            "deferred game binding requires loopback and a companion");
     require(osw_set_app_id(context, 0) == OSW_INVALID_ARGUMENT &&
                 osw_set_app_id(context, 1234) == OSW_OK, "AppID validation before start");
     require(osw_start(context) == OSW_OK, "endpoint context start");
     wait([&] { return osw_get_local_endpoint(context, &out) == OSW_OK; });
     require(osw_enable_virtual_endpoints(context) == OSW_INVALID_ARGUMENT, "no mode change after start");
     require(osw_enable_loopback_endpoints(context) == OSW_INVALID_ARGUMENT &&
-                osw_set_app_id(context, 480) == OSW_INVALID_ARGUMENT, "options fixed after start");
+                osw_set_app_id(context, 480) == OSW_INVALID_ARGUMENT &&
+                osw_defer_game_endpoint(context) == OSW_INVALID_ARGUMENT, "options fixed after start");
     Endpoint physical{{127, 0, 0, 1}, 32000}, remote = virtual_endpoint(43, config);
     require(config.endpoints->install(43, remote, physical), "publish fixture route");
     copy_endpoint(remote, input);

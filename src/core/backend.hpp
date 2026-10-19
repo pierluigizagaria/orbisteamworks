@@ -17,6 +17,7 @@ struct Config {
     bool virtual_endpoints = false;
     std::shared_ptr<EndpointRoutes> endpoints;
     bool loopback_endpoints = false;
+    bool defer_game_endpoint = false;
     std::uint32_t app_id = 480;
     bool canonical_endpoints() const { return virtual_endpoints || loopback_endpoints; }
     const char *protocol() const { return loopback_endpoints ? "3" : virtual_endpoints ? "2" : "1"; }

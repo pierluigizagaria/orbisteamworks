@@ -44,6 +44,10 @@ by Steam transport.
 
 The independent bridge can opt into `loopback-v1`: canonical per-peer sockets
 inside `127.64.0.0/10` carry opaque race traffic without native socket patches.
+For hosts whose UDP bind is known only after launch, explicit deferred endpoint
+registration keeps transport pending until the host supplies its observed socket
+and the companion acknowledges it. There is no packet-based learning or live
+endpoint replacement; see the [public contract](docs/C_API.md#deferred-game-endpoint-registration-additive-2026-10-19).
 Failed or reserved binds fail closed. Windows same-PC Lab supports at most two
 players; Steam multiplayer still requires independent accounts/PCs. See the
 [additive C API](docs/C_API.md#bridge-endpoint-mode-and-appid-additive-exports-2026-10-19).
