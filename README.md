@@ -15,6 +15,7 @@ Neither a particular host nor a game server is required to build the library.
 - Friends filtered by title, build and realm.
 - Session and Invitation v1 WebAPI operations backed by Steam lobbies.
 - Asynchronous requests, copied events and explicit result ownership.
+- Opt-in PSN presence/session notifications and accepted-invitation events.
 - Optional room discovery, authorized UDP endpoints and opaque peer transport.
 - Optional local companion process or server-side Steam ticket validation.
 
@@ -131,6 +132,7 @@ macOS is not currently supported.
 - [Build options](docs/BUILDING.md) and [host integration](docs/INTEGRATION.md)
 - [C API](docs/C_API.md), [companion protocol](docs/COMPANION_PROTOCOL.md) and
   [token / authentication helper protocol](docs/OSW1_TOKEN_AND_HELPER.md)
+- [PSN notification stream](docs/PSN_EVENTS.md)
 - [Architecture and reference index](docs/README.md)
 - [Contributing](CONTRIBUTING.md)
 

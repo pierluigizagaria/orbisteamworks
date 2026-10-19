@@ -66,6 +66,13 @@ Initialize the identity output to zero before the first call. This minimal loop
 handles identity only; an application using requests must also process request,
 friend and session events. On `OSW_RESYNC`, refresh all snapshots it uses.
 
+For PSN callback delivery, enable the optional [PSN notification stream](PSN_EVENTS.md)
+before startup and poll it independently. Its mapping belongs to the provider;
+guest filters, callback lifetime and dispatch belong to the host. Keep accepted
+invitations separate from received pushes and committed game membership. A
+failed notification stream requires explicit integration teardown, not a silent
+fallback to stale snapshots.
+
 Submit operations with `osw_submit`. Metadata and body buffers are copied
 before the call returns. Use `osw_get_result` until completion, process the
 status and buffers, then call `osw_release`. The library owns result buffers;

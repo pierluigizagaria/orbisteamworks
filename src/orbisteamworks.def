@@ -17,5 +17,7 @@ EXPORTS
     osw_cancel
     osw_release
     osw_poll_event
+    osw_enable_psn_events
+    osw_poll_psn_event
     osw_stop
     osw_destroy

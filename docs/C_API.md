@@ -191,6 +191,12 @@ game must keep rendering. See Valve's
 
 ## Events
 
+Consumers needing PSN notification semantics can opt into the separate
+[`osw_enable_psn_events` / `osw_poll_psn_event` stream](PSN_EVENTS.md) before
+startup. It maps presence/session invalidations and invitation receipt into
+copied PSN push records, and preserves accepted invitations as a distinct host
+system action. The legacy queue below and its layouts remain unchanged.
+
 `osw_poll_event` returns copied events. The bounded event queue reports
 `OSW_RESYNC` after overflow; refresh all snapshots in use. Request results
 remain queryable independently of events.

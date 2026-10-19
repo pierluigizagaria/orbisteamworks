@@ -18,3 +18,6 @@ OSW_ABI_1 {
 OSW_ABI_2 {
   global: osw_enable_loopback_endpoints; osw_defer_game_endpoint; osw_set_app_id; osw_get_persona_name; osw_create_v2; osw_enable_virtual_endpoints; osw_get_local_endpoint; osw_route_endpoint;
 } OSW_ABI_1;
+OSW_PSN_EVENTS_1 {
+  global: osw_enable_psn_events; osw_poll_psn_event;
+} OSW_ABI_2;

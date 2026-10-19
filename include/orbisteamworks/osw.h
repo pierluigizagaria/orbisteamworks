@@ -146,6 +146,14 @@ int32_t osw_get_result(osw_context *context, uint64_t request_id, osw_result *ou
 int32_t osw_cancel(osw_context *context, uint64_t request_id);
 int32_t osw_release(osw_context *context, uint64_t request_id);
 int32_t osw_poll_event(osw_context *context, osw_event *output);
+/* Optional PSN notification stream, version 1; select before start. Independent
+ * of osw_poll_event. Poll copies one UTF-8 JSON record, including its NUL.
+ * required includes NUL; NULL/zero and short buffers return LIMIT without pop.
+ * PENDING means empty. Overflow/malformed source events latch UNAVAILABLE;
+ * recreate the context instead of silently losing an accepted invitation.
+ * One consumer serializes size-probe and copy calls. See docs/PSN_EVENTS.md. */
+int32_t osw_enable_psn_events(osw_context *context, uint32_t version);
+int32_t osw_poll_psn_event(osw_context *context, char *buffer, size_t capacity, size_t *required);
 /* Stop joins the owner thread and completes pending requests with OSW_ABORTED.
  * Completed results survive stop. Destroy must not race any other API call. */
 int32_t osw_stop(osw_context *context);

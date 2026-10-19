@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -70,6 +71,12 @@ std::optional<std::string> unescape(std::string_view value) {
     return result;
 }
 } // namespace
+
+std::string make_invitation_id(std::uint64_t lobby, std::uint64_t sender, std::uint64_t sequence) {
+    char suffix[16];
+    const auto end = std::to_chars(suffix, suffix + sizeof(suffix), sequence, 16).ptr;
+    return std::to_string(lobby) + "-" + std::to_string(sender) + "-" + std::string(suffix, end);
+}
 
 struct Platform::Impl {
     Config config;
@@ -1150,11 +1157,17 @@ void Platform::process(const std::vector<SocialEvent> &events) {
                                    item.second.sender == incoming.sender && !item.second.declined &&
                                    (!item.second.accepted || p->joined.contains(event.lobby));
                         });
+                    // Keep opaque invitation IDs within the PSN 60-byte limit,
+                    // including full-width lobby/account/sequence values.
+                    if (prior == p->invitations.end() &&
+                        p->invitation_sequence == std::numeric_limits<Id>::max()) {
+                        p->update.events.push_back({OSW_RESYNC});
+                        continue;
+                    }
                     const auto key = prior != p->invitations.end()
                                          ? prior->first
-                                         : std::to_string(event.lobby) + "-" +
-                                               std::to_string(incoming.sender) + "-" +
-                                               std::to_string(++p->invitation_sequence);
+                                         : make_invitation_id(event.lobby, incoming.sender,
+                                                              ++p->invitation_sequence);
                     auto [invite, inserted] = p->invitations.try_emplace(
                         key, Impl::Invitation{event.lobby, incoming.sender,
                                               p->known_friends[incoming.sender].second});

@@ -40,6 +40,8 @@ typedef struct Api {
     int32_t (*enable_virtual_endpoints)(osw_context *);
     int32_t (*get_local_endpoint)(osw_context *, osw_endpoint *);
     int32_t (*route_endpoint)(osw_context *, uint32_t, const osw_endpoint *, osw_endpoint *);
+    int32_t (*enable_psn_events)(osw_context *, uint32_t);
+    int32_t (*poll_psn_event)(osw_context *, char *, size_t, size_t *);
 } Api;
 
 static const char *const names[] = {"osw_create",  "osw_start",      "osw_get_identity",
@@ -47,7 +49,8 @@ static const char *const names[] = {"osw_create",  "osw_start",      "osw_get_id
                                     "osw_release", "osw_poll_event", "osw_stop",
                                     "osw_destroy", "osw_create_v2", "osw_enable_virtual_endpoints",
                                     "osw_get_local_endpoint", "osw_route_endpoint", "osw_enable_loopback_endpoints",
-                                    "osw_set_app_id", "osw_get_persona_name", "osw_defer_game_endpoint"};
+                                    "osw_set_app_id", "osw_get_persona_name", "osw_defer_game_endpoint",
+                                    "osw_enable_psn_events", "osw_poll_psn_event"};
 #define NAME_COUNT (sizeof(names) / sizeof(names[0]))
 
 static int fail(const char *message) {
@@ -107,6 +110,14 @@ static int run(const Api *api, const char *steam_library) {
     config.abi_version = OSW_ABI_VERSION;
     if (api->create(&config, &context) != OSW_OK || !context)
         return fail("create");
+    {
+        size_t required = 0;
+        if (api->poll_psn_event(context, NULL, 0, &required) != OSW_NOT_SUPPORTED ||
+            api->enable_psn_events(context, 1) != OSW_OK) {
+            error = "optional PSN stream negotiation";
+            goto done;
+        }
+    }
     if (api->start(context) != OSW_OK) {
         error = "start";
         goto done;
@@ -136,6 +147,15 @@ static int run(const Api *api, const char *steam_library) {
         goto done;
     }
     printf("signed out: reason_code=%d reason=\"%s\"\n", identity.reason_code, identity.reason);
+    {
+        char notification[512];
+        size_t required = 0;
+        if (api->poll_psn_event(context, notification, sizeof(notification), &required) != OSW_OK ||
+            !strstr(notification, "\"signedIn\":false") || !strstr(notification, "\"kind\":\"identity\"")) {
+            error = "runtime-loaded PSN stream did not report sign-out";
+            goto done;
+        }
+    }
 
     /* A signed-out library must refuse or fail a token request, never succeed. */
     memset(&request, 0, sizeof(request));
@@ -207,6 +227,8 @@ int main(int argc, char **argv) {
     memcpy(&api.stop, &slots[8], sizeof(void *));
     memcpy(&api.destroy, &slots[9], sizeof(void *));
     memcpy(&api.create_v2, &slots[10], sizeof(void *));
+    memcpy(&api.enable_psn_events, &slots[18], sizeof(void *));
+    memcpy(&api.poll_psn_event, &slots[19], sizeof(void *));
     {
         osw_config_v2 invalid = {0};
         osw_context *context = NULL;

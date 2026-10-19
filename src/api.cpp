@@ -2,6 +2,7 @@
 #include "core/credential.hpp"
 #include "core/endpoints.hpp"
 #include "core/local_io.hpp"
+#include "core/psn_events.hpp"
 #include "lab/backend.hpp"
 #include "lab/error.hpp"
 #include "steam/backend.hpp"
@@ -60,12 +61,14 @@ struct osw_context {
     std::map<std::uint64_t, std::shared_ptr<Job>> jobs;
     std::deque<std::uint64_t> queued, cancellations;
     std::deque<osw::core::Event> events;
+    osw::core::PsnEvents psn_events;
     osw::core::Identity identity;
     std::uint64_t next_id = 1;
     std::size_t inputs = 0, outputs = 0;
     bool started = false, stopping = false, overflow = false, production = false;
 
     void event(osw::core::Event value) {
+        psn_events.append(value, identity);
         if (events.size() == 512) {
             overflow = true;
             return;
@@ -207,6 +210,22 @@ osw_context *create_context(Config config, std::unique_ptr<Backend> backend) {
 } // namespace osw::core
 
 extern "C" {
+int32_t osw_enable_psn_events(osw_context *context, uint32_t version) {
+    if (!context) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lifecycle(context->lifecycle);
+        std::lock_guard lock(context->mutex);
+        if (context->started || context->stopping) return OSW_INVALID_ARGUMENT;
+        return context->psn_events.enable(version);
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
+int32_t osw_poll_psn_event(osw_context *context, char *buffer, size_t capacity, size_t *required) {
+    if (!context || !required || (!buffer && capacity)) return OSW_INVALID_ARGUMENT;
+    try {
+        std::lock_guard lock(context->mutex);
+        return context->psn_events.poll(buffer, capacity, required);
+    } catch (...) { return OSW_UNAVAILABLE; }
+}
 int32_t osw_enable_virtual_endpoints(osw_context *context) {
     if (!context) return OSW_INVALID_ARGUMENT;
     try {

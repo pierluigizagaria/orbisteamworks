@@ -4,6 +4,8 @@
 #include <memory>
 
 namespace osw::core {
+// Opaque replacement-platform ID; at most 58 bytes even for full-width inputs.
+std::string make_invitation_id(std::uint64_t lobby, std::uint64_t sender, std::uint64_t sequence);
 class Platform {
   public:
     Platform(Config config, Identity identity, Social &social);

@@ -4,6 +4,7 @@
 #include "core/multipart.hpp"
 #include "core/p2p.hpp"
 #include "core/platform.hpp"
+#include "core/psn_events.hpp"
 #include "exception_observer.hpp"
 #include <iostream>
 #include <map>
@@ -424,9 +425,28 @@ void friend_presence_events() {
     const auto changed = [&] {
         platform.process({{SocialEvent::friends_changed}});
         auto events = platform.take_update().events;
+        PsnEvents notifications;
+        notifications.enable(1);
+        for (const auto &event : events)
+            notifications.append(event, {true, self, "LocalName"});
         std::erase_if(events, [](const Event &event) {
             return event.type != OSW_FRIENDS_CHANGED || !event.account_id;
         });
+        for (const auto &event : events) {
+            for (const char *type : {"np:service:presence:onlineStatus", "np:service:presence:gameTitleInfo"}) {
+                char bytes[16384];
+                std::size_t required = 0;
+                check(notifications.poll(bytes, sizeof(bytes), &required) == OSW_OK,
+                      "actual friend transition produces a complete PSN invalidation pair");
+                const auto value = Json::parse(bytes);
+                check(value["dataType"] == type && value["from"]["accountId"] == std::to_string(event.account_id) &&
+                          value["from"]["onlineId"] == event.online_id && value["data"] == "",
+                      "actual filtered snapshot maps onto presence, retaining its account/name");
+            }
+        }
+        std::size_t required = 0;
+        check(notifications.poll(nullptr, 0, &required) == OSW_PENDING,
+              "generic refresh and incompatible friends must not fabricate PSN persons");
         return events;
     };
     social.friend_values = {{peer, "Remote Persona", true}, {peer + 1, "Foreign", true}};
@@ -903,6 +923,20 @@ void invitation_accept_lifecycle() {
                       accepted[0].account_id == peer && accepted[0].session_id == std::to_string(target) &&
                       accepted[0].invitation_id == id && accepted[0].online_id == "RemoteName",
                   "accepted event copies the exact target, invitation and referring friend");
+            PsnEvents notifications;
+            notifications.enable(1);
+            notifications.append(accepted[0], {true, self, "LocalName"});
+            char bytes[16384];
+            std::size_t required = 0;
+            check(notifications.poll(bytes, sizeof(bytes), &required) == OSW_OK,
+                  "completed provider acceptance reaches the PSN stream");
+            const auto notification = Json::parse(bytes);
+            check(notification["kind"] == "invitationAccepted" && notification["invitationId"] == id &&
+                      notification["sessionId"] == std::to_string(target) &&
+                      notification["from"]["accountId"] == std::to_string(peer) &&
+                      notification["from"]["onlineId"] == "RemoteName" &&
+                      notification["to"]["accountId"] == std::to_string(self),
+                  "accepted notification preserves real core lifecycle and exact identities");
         };
         accept(4, invitation, target_state == 0);
         check(social.member_values[target][self]["osw.member"] ==
