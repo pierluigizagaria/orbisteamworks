@@ -14,6 +14,10 @@ on:
         description: 'Create a new GitHub draft release after checks pass (main only)'
         type: boolean
         default: true
+      revision_asset:
+        description: 'Add the source revision to the asset name (prepare an additive preview asset)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,6 +35,7 @@ jobs:
       GOTOOLCHAIN: local
       RELEASE_VERSION: ${{ inputs.version }}
       CREATE_DRAFT: ${{ inputs.create_draft }}
+      REVISION_ASSET: ${{ inputs.revision_asset }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,6 +65,7 @@ jobs:
           if ($env:EVENT_NAME -eq 'workflow_dispatch') {
             $buildArgs = @() + @('--version', $env:RELEASE_VERSION)
           }
+          if ($env:REVISION_ASSET -eq 'true') { $buildArgs += '--revision-asset' }
           python tools/ci_build.py @buildArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified package

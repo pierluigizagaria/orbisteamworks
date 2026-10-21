@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--version', type=version)
+    parser.add_argument('--revision-asset', action='store_true',
+                        help='Use a source-revision suffix for an additive asset of an existing preview')
     args = parser.parse_args()
     source_revision = output('git', 'rev-parse', 'HEAD')
     tag = args.version or 'v0.0.1-ci.' + source_revision[:12]
@@ -34,7 +36,8 @@ def main():
     info = build_info()
     info.update(cmake_info(ROOT / 'build/ci'))
     info['dependencies'] = lock
-    package_component(ROOT / 'dist' / f'orbisteamworks-{tag}-windows-x64.zip', files,
+    asset_suffix = '-' + source_revision[:12] if args.revision_asset else ''
+    package_component(ROOT / 'dist' / f'orbisteamworks-{tag}{asset_suffix}-windows-x64.zip', files,
                       'orbisteamworks', tag, source_revision, 'MIT', info)
 
 
